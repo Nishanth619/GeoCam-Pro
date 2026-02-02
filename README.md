@@ -77,7 +77,9 @@ flutter run
 If you are using real API keys (e.g. for Weather or Maps), create a `.env` file or configure your `local.properties` as needed (Currently configured for open-source alternatives where possible).
 
 ## 📄 License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Copyright (c) 2026 Nishanth619. All Rights Reserved.
+
+This project is proprietary software. Unauthorized copying, modification, distribution, or use of this source code is strictly prohibited.
 
 ---
 *Built with ❤️ using Flutter*
