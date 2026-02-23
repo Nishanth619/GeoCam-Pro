@@ -641,317 +641,436 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          Positioned.fill(child: _buildCameraPreview()),
-          
-          // Visual Shutter Shutter Flash Effect
-          if (_showShutterEffect)
-            Positioned.fill(
-              child: Container(
-                color: Colors.white.withValues(alpha: 0.8),
-              ),
-            ),
-          
-          // Focus reticle with tap to focus (placed before UI to allow UI buttons on top)
+    return OrientationBuilder(
+      builder: (context, orientation) {
+        final isLandscape = orientation == Orientation.landscape;
+        return Scaffold(
+          backgroundColor: Colors.black,
+          body: isLandscape
+              ? _buildLandscapeLayout()
+              : _buildPortraitLayout(),
+        );
+      },
+    );
+  }
+
+  // ─── PORTRAIT LAYOUT (original) ────────────────────────────────────────────
+  Widget _buildPortraitLayout() {
+    return Stack(
+      children: [
+        Positioned.fill(child: _buildCameraPreview()),
+
+        // Shutter flash
+        if (_showShutterEffect)
           Positioned.fill(
-            child: GestureDetector(
-              onTapUp: (details) async {
-                if (!_cameraService.isInitialized) return;
-                
-                // 1. INSTANT FEEDBACK: Show reticle and trigger haptics immediately
-                setState(() {
-                  _focusPoint = details.localPosition;
-                  _isFocusing = true;
-                });
-                
-                HapticFeedback.lightImpact();
+            child: Container(color: Colors.white.withValues(alpha: 0.8)),
+          ),
 
-                // 2. BACKGROUND HARDWARE UPDATE (Don't wait for hardware to show UI)
-                final size = MediaQuery.of(context).size;
-                final x = details.localPosition.dx / size.width;
-                final y = details.localPosition.dy / size.height;
-                
-                _cameraService.setFocusPoint(x, y);
-                _cameraService.setExposurePoint(x, y);
+        // Tap-to-focus overlay
+        Positioned.fill(child: _buildFocusOverlay()),
 
-                // 3. AUTO-HIDE LOGIC
-                _focusTimer?.cancel();
-                _focusTimer = Timer(const Duration(seconds: 2), () {
-                  if (mounted) {
-                    setState(() {
-                      _isFocusing = false;
-                    });
-                  }
-                });
+        // Focus reticle
+        if (_isFocusing && _focusPoint != null)
+          Positioned(
+            left: _focusPoint!.dx - 35,
+            top: _focusPoint!.dy - 35,
+            child: const _FocusReticle(),
+          ),
+
+        // Vignette
+        Positioned.fill(child: _buildVignette()),
+
+        // Top toolbar
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: SafeArea(
+            bottom: false,
+            child: _buildTopToolbar(),
+          ),
+        ),
+
+        // Zoom slider
+        Positioned(
+          right: 20,
+          top: 0,
+          bottom: 120,
+          child: Center(
+            child: ZoomSlider(
+              value: _zoomLevel,
+              onChanged: (value) async {
+                _zoomLevel = value;
+                await _cameraService.setZoom(value);
               },
-              behavior: HitTestBehavior.translucent,
-              child: const SizedBox.expand(),
             ),
           ),
-          
-          // Dynamic Focus Reticle
-          if (_isFocusing && _focusPoint != null)
-            Positioned(
-              left: _focusPoint!.dx - 35,
-              top: _focusPoint!.dy - 35,
-              child: const _FocusReticle(),
-            ),
-          
-          // Vignette overlay
-          Positioned.fill(
-            child: IgnorePointer(
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black.withValues(alpha: 0.6),
-                      Colors.transparent,
-                      Colors.transparent,
-                      Colors.black.withValues(alpha: 0.6),
-                    ],
-                    stops: const [0.0, 0.2, 0.8, 1.0],
-                  ),
-                ),
+        ),
+
+        // Bottom controls
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.transparent,
+                  Colors.black.withValues(alpha: 0.9),
+                  Colors.black,
+                ],
+                stops: const [0.0, 0.3, 1.0],
               ),
             ),
-          ),
-          
-          // Top toolbar
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
             child: SafeArea(
-              bottom: false,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black.withValues(alpha: 0.8),
-                      Colors.transparent,
-                    ],
+              top: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildGpsHud(),
+                  const SizedBox(height: 12),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 32),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        _buildGalleryThumbnail(),
+                        _buildShutterButton(),
+                        _buildTemplatesButton(),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ─── LANDSCAPE LAYOUT ───────────────────────────────────────────────────────
+  Widget _buildLandscapeLayout() {
+    return Row(
+      children: [
+        // LEFT panel: GPS HUD
+        SafeArea(
+          child: Container(
+            width: 200,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                colors: [
+                  Colors.black.withValues(alpha: 0.95),
+                  Colors.black.withValues(alpha: 0.6),
+                ],
+              ),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildTopToolbar(compact: true),
+                const Spacer(),
+                _buildGpsHud(compact: true),
+                const Spacer(),
+              ],
+            ),
+          ),
+        ),
+
+        // CENTER: camera preview
+        Expanded(
+          child: Stack(
+            children: [
+              Positioned.fill(child: _buildCameraPreview()),
+
+              // Shutter flash
+              if (_showShutterEffect)
+                Positioned.fill(
+                  child: Container(color: Colors.white.withValues(alpha: 0.8)),
+                ),
+
+              // Tap-to-focus
+              Positioned.fill(child: _buildFocusOverlay()),
+
+              // Focus reticle
+              if (_isFocusing && _focusPoint != null)
+                Positioned(
+                  left: _focusPoint!.dx - 35,
+                  top: _focusPoint!.dy - 35,
+                  child: const _FocusReticle(),
+                ),
+
+              // Vignette
+              Positioned.fill(child: _buildVignette()),
+            ],
+          ),
+        ),
+
+        // RIGHT panel: controls
+        SafeArea(
+          child: Container(
+            width: 90,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.centerRight,
+                end: Alignment.centerLeft,
+                colors: [
+                  Colors.black.withValues(alpha: 0.95),
+                  Colors.black.withValues(alpha: 0.6),
+                ],
+              ),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _buildGalleryThumbnail(),
+                _buildShutterButton(),
+                _buildTemplatesButton(),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ─── SHARED SUB-WIDGETS ─────────────────────────────────────────────────────
+
+  Widget _buildFocusOverlay() {
+    return GestureDetector(
+      onTapUp: (details) async {
+        if (!_cameraService.isInitialized) return;
+        setState(() {
+          _focusPoint = details.localPosition;
+          _isFocusing = true;
+        });
+        HapticFeedback.lightImpact();
+        final size = MediaQuery.of(context).size;
+        final x = details.localPosition.dx / size.width;
+        final y = details.localPosition.dy / size.height;
+        _cameraService.setFocusPoint(x, y);
+        _cameraService.setExposurePoint(x, y);
+        _focusTimer?.cancel();
+        _focusTimer = Timer(const Duration(seconds: 2), () {
+          if (mounted) setState(() => _isFocusing = false);
+        });
+      },
+      behavior: HitTestBehavior.translucent,
+      child: const SizedBox.expand(),
+    );
+  }
+
+  Widget _buildVignette() {
+    return IgnorePointer(
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.black.withValues(alpha: 0.6),
+              Colors.transparent,
+              Colors.transparent,
+              Colors.black.withValues(alpha: 0.6),
+            ],
+            stops: const [0.0, 0.2, 0.8, 1.0],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopToolbar({bool compact = false}) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 8 : 24,
+        vertical: compact ? 8 : 16,
+      ),
+      decoration: compact
+          ? null
+          : BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withValues(alpha: 0.8),
+                  Colors.transparent,
+                ],
+              ),
+            ),
+      child: compact
+          ? Column(
+              children: [
+                _ToolbarButton(
+                  icon: _getFlashIcon(),
+                  onTap: _cameraService.isFrontCamera ? null : _toggleFlash,
+                ),
+                const SizedBox(height: 8),
+                GestureDetector(
+                  onTap: _cycleAspectRatio,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.4),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      _aspectRatio,
+                      style: const TextStyle(fontSize: 11, color: Colors.white),
+                    ),
                   ),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    // Flash button (disabled for front camera)
-                    Opacity(
-                      opacity: _cameraService.isFrontCamera ? 0.4 : 1.0,
-                      child: _ToolbarButton(
-                        icon: _getFlashIcon(),
-                        onTap: _cameraService.isFrontCamera ? null : _toggleFlash,
-                      ),
-                    ),
-                    // Aspect ratio button
-                    GestureDetector(
-                      onTap: _cycleAspectRatio,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.4),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.1),
-                          ),
-                        ),
-                        child: Text(
-                          _aspectRatio,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.white,
-                            letterSpacing: 1,
-                          ),
-                        ),
-                      ),
-                    ),
-                    // Switch camera button
-                    _ToolbarButton(
-                      icon: _isSwitchingCamera ? Icons.hourglass_empty : Icons.flip_camera_ios,
-                      onTap: _isSwitchingCamera ? null : _switchCamera,
-                    ),
-                  ],
+                const SizedBox(height: 8),
+                _ToolbarButton(
+                  icon: _isSwitchingCamera ? Icons.hourglass_empty : Icons.flip_camera_ios,
+                  onTap: _isSwitchingCamera ? null : _switchCamera,
                 ),
-              ),
+              ],
+            )
+          : Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Opacity(
+                  opacity: _cameraService.isFrontCamera ? 0.4 : 1.0,
+                  child: _ToolbarButton(
+                    icon: _getFlashIcon(),
+                    onTap: _cameraService.isFrontCamera ? null : _toggleFlash,
+                  ),
+                ),
+                GestureDetector(
+                  onTap: _cycleAspectRatio,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.4),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                    ),
+                    child: Text(
+                      _aspectRatio,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.white,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                  ),
+                ),
+                _ToolbarButton(
+                  icon: _isSwitchingCamera ? Icons.hourglass_empty : Icons.flip_camera_ios,
+                  onTap: _isSwitchingCamera ? null : _switchCamera,
+                ),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildGpsHud({bool compact = false}) {
+    return GpsHudCard(
+      address: _currentAddress ?? 'Acquiring location...',
+      coordinates: _currentPosition != null
+          ? (_settings.templateCoordFormat == 'Decimal Degrees (DD)'
+              ? _locationService.formatCoordinatesDD(
+                  _currentPosition!.latitude,
+                  _currentPosition!.longitude,
+                )
+              : _locationService.formatCoordinatesDMS(
+                  _currentPosition!.latitude,
+                  _currentPosition!.longitude,
+                ))
+          : 'GPS Signal...',
+      altitude: _currentPosition?.altitude != null
+          ? _settings.formatAltitude(_currentPosition!.altitude)
+          : '--',
+      temperature: _temperature != null
+          ? _settings.formatTemperature(_temperature)
+          : '--',
+      gpsSignal: _locationService.getGpsSignalStrength(_currentPosition?.accuracy),
+      dateTime: _currentTime,
+      latitude: _currentPosition?.latitude,
+      longitude: _currentPosition?.longitude,
+      heading: _currentPosition?.heading,
+      showAddress: _settings.templateShowAddress,
+      showCoordinates: _settings.templateShowCoordinates,
+      showCompass: _settings.templateShowCompass,
+      showDateTime: _settings.templateShowDateTime,
+      mapType: _settings.templateMapType,
+      dateFormat: _settings.templateDateFormat,
+    );
+  }
+
+  Widget _buildShutterButton() {
+    return GestureDetector(
+      onTap: _capturePhoto,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 100),
+        width: 80,
+        height: 80,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 4),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.5),
+              blurRadius: 20,
+            ),
+          ],
+        ),
+        child: Center(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 100),
+            width: _isCapturing ? 56 : 64,
+            height: _isCapturing ? 56 : 64,
+            decoration: BoxDecoration(
+              color: _isCapturing
+                  ? const Color(0xFFB91C1C)
+                  : const Color(0xFFDC2626),
+              shape: BoxShape.circle,
             ),
           ),
-          
+        ),
+      ),
+    );
+  }
 
-          
-          // Zoom slider (Shifted higher to clear HUD)
-          Positioned(
-            right: 20,
-            top: 0,
-            bottom: 120, // Lifted from bottom to clear HUD
-            child: Center(
-              child: ZoomSlider(
-                value: _zoomLevel,
-                onChanged: (value) async {
-                  _zoomLevel = value;
-                  await _cameraService.setZoom(value);
-                },
-              ),
+  Widget _buildTemplatesButton() {
+    return GestureDetector(
+      onTap: _showTemplateSheet,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: const Icon(Icons.layers, color: Colors.white, size: 28),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'TEMPLATES',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w500,
+              letterSpacing: 0.5,
+              color: Colors.white70,
             ),
           ),
-          
-          // Bottom UI
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.transparent,
-                    Colors.black.withValues(alpha: 0.9),
-                    Colors.black,
-                  ],
-                  stops: const [0.0, 0.3, 1.0],
-                ),
-              ),
-              child: SafeArea(
-                top: false,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // GPS HUD Card with real data
-                    GpsHudCard(
-                      address: _currentAddress ?? 'Acquiring location...',
-                      coordinates: _currentPosition != null
-                          ? (_settings.templateCoordFormat == 'Decimal Degrees (DD)'
-                              ? _locationService.formatCoordinatesDD(
-                                  _currentPosition!.latitude,
-                                  _currentPosition!.longitude,
-                                )
-                              : _locationService.formatCoordinatesDMS(
-                                  _currentPosition!.latitude,
-                                  _currentPosition!.longitude,
-                                ))
-                          : 'GPS Signal...',
-                      altitude: _currentPosition?.altitude != null
-                          ? _settings.formatAltitude(_currentPosition!.altitude)
-                          : '--',
-                      temperature: _temperature != null
-                          ? _settings.formatTemperature(_temperature)
-                          : '--',
-                      gpsSignal: _locationService.getGpsSignalStrength(
-                        _currentPosition?.accuracy,
-                      ),
-                      dateTime: _currentTime,
-                      latitude: _currentPosition?.latitude,
-                      longitude: _currentPosition?.longitude,
-                      heading: _currentPosition?.heading,
-                      showAddress: _settings.templateShowAddress,
-                      showCoordinates: _settings.templateShowCoordinates,
-                      showCompass: _settings.templateShowCompass,
-                      showDateTime: _settings.templateShowDateTime,
-                      mapType: _settings.templateMapType,
-                      dateFormat: _settings.templateDateFormat,
-                    ),
-                    const SizedBox(height: 12), // Reduced spacer
-                    // Camera controls
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 32),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          // Gallery thumbnail with real photo
-                          _buildGalleryThumbnail(),
-                          // Shutter button
-                          GestureDetector(
-                            onTap: _capturePhoto,
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 100),
-                              width: 80,
-                              height: 80,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: Colors.white,
-                                  width: 4,
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.5),
-                                    blurRadius: 20,
-                                  ),
-                                ],
-                              ),
-                              child: Center(
-                                child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 100),
-                                  width: _isCapturing ? 56 : 64,
-                                  height: _isCapturing ? 56 : 64,
-                                  decoration: BoxDecoration(
-                                    color: _isCapturing
-                                        ? const Color(0xFFB91C1C)
-                                        : const Color(0xFFDC2626),
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          // Templates button
-                          GestureDetector(
-                            onTap: _showTemplateSheet,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 48,
-                                  height: 48,
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(24),
-                                  ),
-                                  child: const Icon(
-                                    Icons.layers,
-                                    color: Colors.white,
-                                    size: 28,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                const Text(
-                                  'TEMPLATES',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w500,
-                                    letterSpacing: 0.5,
-                                    color: Colors.white70,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16), // Reduced spacer
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-
         ],
       ),
     );
   }
 }
+
 
 /// Top-level function for background image processing (Isolate)
 void _processImageCrop(Map<String, dynamic> message) {
