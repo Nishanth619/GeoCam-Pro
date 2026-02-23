@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
 
@@ -47,203 +45,104 @@ class GpsHudCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final displayDate = dateTime ?? DateTime.now();
-    
+    final timeStr = DateFormat('hh:mm a').format(displayDate);
+
     String formattedDate;
     try {
       if (dateFormat == 'DD/MM/YYYY') {
-        formattedDate = DateFormat('EEEE, dd/MM/yyyy').format(displayDate);
+        formattedDate = DateFormat('dd/MM/yy').format(displayDate);
       } else if (dateFormat == 'MM/DD/YYYY') {
-        formattedDate = DateFormat('EEEE, MM/dd/yyyy').format(displayDate);
+        formattedDate = DateFormat('MM/dd/yy').format(displayDate);
       } else {
-        formattedDate = DateFormat('EEEE, yyyy-MM-dd').format(displayDate);
+        formattedDate = DateFormat('yy-MM-dd').format(displayDate);
       }
     } catch (_) {
-      formattedDate = DateFormat('EEEE, dd/MM/yyyy').format(displayDate);
+      formattedDate = DateFormat('dd/MM/yy').format(displayDate);
     }
-    
-    final timeStr = DateFormat('hh:mm a').format(displayDate);
-    final dateStr = DateFormat('EEEE, dd/MM/yyyy').format(displayDate);
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(16),
+        color: Colors.black.withOpacity(0.72),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: Colors.white.withValues(alpha: 0.12),
+          color: Colors.white.withOpacity(0.1),
           width: 1,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // 1. Text Data Column (On the Left)
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Title / Main Location
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        _getShortAddress(address),
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                          letterSpacing: 0.1,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const Icon(Icons.verified, color: AppColors.primary, size: 14),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                
-                // Detailed Address
-                if (showAddress)
-                  Text(
-                    address,
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.white.withValues(alpha: 0.7),
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                const SizedBox(height: 6),
-                
-                // Lat/Long Row
-                Row(
-                  children: [
-                    const Icon(Icons.my_location, color: AppColors.primary, size: 12),
-                    const SizedBox(width: 4),
-                    Text(
-                      coordinates,
-                      style: const TextStyle(
-                        fontSize: 10,
-                        fontFamily: 'monospace',
-                        color: Colors.white70,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
+          // GPS signal dot
+          _buildSignalDot(),
+          const SizedBox(width: 8),
 
-                // Date & Time Row
-                Row(
-                  children: [
-                    const Icon(Icons.calendar_today, color: Colors.white38, size: 9),
-                    const SizedBox(width: 4),
-                    Text(
-                      "$dateStr • $timeStr",
-                      style: const TextStyle(
-                        fontSize: 9,
-                        color: Colors.white60,
-                      ),
+          // Scrollable chip row — all data in one line
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  // Location name
+                  if (showAddress) ...[
+                    _CompactChip(
+                      icon: Icons.place_outlined,
+                      label: _getShortAddress(address),
+                      iconColor: AppColors.primary,
                     ),
+                    const SizedBox(width: 6),
                   ],
-                ),
-                
-                const SizedBox(height: 8),
-                
-                // Bottom Stats Bar
-                Row(
-                  children: [
-                    _HudStat(icon: Icons.landscape_outlined, value: altitude),
-                    const SizedBox(width: 12),
-                    _HudStat(icon: Icons.wb_sunny_outlined, value: temperature),
-                    const Spacer(),
-                    _buildGpsSignalIndicator(),
+
+                  // Coordinates
+                  if (showCoordinates) ...[
+                    _CompactChip(
+                      icon: Icons.my_location,
+                      label: coordinates,
+                      iconColor: AppColors.primary,
+                      mono: true,
+                    ),
+                    const SizedBox(width: 6),
                   ],
-                ),
-                
-                const SizedBox(height: 8),
-                const Text(
-                  "📍 GEOCAM PRO",
-                  style: TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w900,
-                    color: AppColors.primary,
-                    letterSpacing: 1.0,
+
+                  // Altitude
+                  _CompactChip(
+                    icon: Icons.landscape_outlined,
+                    label: altitude,
+                    iconColor: Colors.white54,
                   ),
-                ),
-              ],
-            ),
-          ),
-          
-          const SizedBox(width: 14),
-          
-          // 2. Mini Map Preview (On the Right)
-          GestureDetector(
-            onTap: onMapTap,
-            child: Container(
-              width: 90,
-              height: 90,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  width: 1,
-                ),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: latitude != null && longitude != null
-                  ? IgnorePointer(
-                      child: FlutterMap(
-                        options: MapOptions(
-                          initialCenter: LatLng(latitude!, longitude!),
-                          initialZoom: 17.0, // High-Precision
-                        ),
-                        children: [
-                          TileLayer(
-                            urlTemplate: _getTileUrl(),
-                            userAgentPackageName: 'com.geocam.app',
-                          ),
-                          MarkerLayer(
-                            markers: [
-                              Marker(
-                                point: LatLng(latitude!, longitude!),
-                                width: 22,
-                                height: 22,
-                                child: showCompass && heading != null
-                                    ? Transform.rotate(
-                                        angle: (heading! * 3.14159 / 180),
-                                        child: const Icon(
-                                          Icons.navigation,
-                                          color: AppColors.primary,
-                                          size: 18,
-                                        ),
-                                      )
-                                    : const Icon(
-                                        Icons.location_on,
-                                        color: AppColors.primary,
-                                        size: 18,
-                                      ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    )
-                  : Container(
-                      color: AppColors.cardDark,
-                      child: const Center(
-                        child: Icon(Icons.satellite_alt, color: Colors.white24, size: 24),
-                      ),
+                  const SizedBox(width: 6),
+
+                  // Temperature
+                  _CompactChip(
+                    icon: Icons.wb_sunny_outlined,
+                    label: temperature,
+                    iconColor: Colors.white54,
+                  ),
+
+                  // Date / time
+                  if (showDateTime) ...[
+                    const SizedBox(width: 6),
+                    _CompactChip(
+                      icon: Icons.schedule,
+                      label: '$formattedDate  $timeStr',
+                      iconColor: Colors.white38,
                     ),
+                  ],
+
+                  const SizedBox(width: 8),
+                  // Brand tag
+                  const Text(
+                    '📍 GEOCAM PRO',
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.primary,
+                      letterSpacing: 1.0,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -251,89 +150,64 @@ class GpsHudCard extends StatelessWidget {
     );
   }
 
-  String _getTileUrl() {
-    switch (mapType) {
-      case 1: // Satellite (Esri)
-      case 3: // Hybrid (Esri Satellite)
-        return 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
-      case 2: // Terrain (OpenTopoMap)
-        return 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png';
-      case 0: // Normal (OSM)
-      default:
-        return 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+  Widget _buildSignalDot() {
+    Color signalColor;
+    switch (gpsSignal) {
+      case 'HIGH':      signalColor = const Color(0xFF10B981); break;
+      case 'GOOD':      signalColor = const Color(0xFF22C55E); break;
+      case 'MEDIUM':    signalColor = const Color(0xFFF59E0B); break;
+      case 'ACQUIRING': signalColor = const Color(0xFF6B7280); break;
+      default:          signalColor = const Color(0xFFEF4444);
     }
-  }
-
-  String _getCardinalDirection(double heading) {
-    const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
-    int index = ((heading + 22.5) % 360 / 45).floor();
-    return directions[index];
+    return Container(
+      width: 8,
+      height: 8,
+      decoration: BoxDecoration(
+        color: signalColor,
+        shape: BoxShape.circle,
+        boxShadow: [BoxShadow(color: signalColor.withValues(alpha: 0.6), blurRadius: 5)],
+      ),
+    );
   }
 
   String _getShortAddress(String fullAddress) {
     final parts = fullAddress.split(',');
     if (parts.length >= 2) {
-      return "${parts[parts.length-2].trim()}, ${parts[parts.length-1].trim()}";
+      return '${parts[parts.length - 2].trim()}, ${parts[parts.length - 1].trim()}';
     }
     return fullAddress;
   }
-
-  Widget _buildGpsSignalIndicator() {
-    Color signalColor;
-    switch (gpsSignal) {
-      case 'HIGH': signalColor = const Color(0xFF10B981); break;
-      case 'GOOD': signalColor = const Color(0xFF22C55E); break;
-      case 'MEDIUM': signalColor = const Color(0xFFF59E0B); break;
-      case 'ACQUIRING': signalColor = const Color(0xFF6B7280); break;
-      default: signalColor = const Color(0xFFEF4444);
-    }
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 6,
-          height: 6,
-          decoration: BoxDecoration(
-            color: signalColor,
-            shape: BoxShape.circle,
-            boxShadow: [BoxShadow(color: signalColor.withValues(alpha: 0.5), blurRadius: 4)],
-          ),
-        ),
-        const SizedBox(width: 6),
-        Text(
-          gpsSignal,
-          style: TextStyle(
-            fontSize: 9,
-            fontWeight: FontWeight.bold,
-            color: signalColor,
-            letterSpacing: 0.5,
-          ),
-        ),
-      ],
-    );
-  }
 }
 
-class _HudStat extends StatelessWidget {
+/// A small pill-shaped chip used inside the compact HUD row
+class _CompactChip extends StatelessWidget {
   final IconData icon;
-  final String value;
+  final String label;
+  final Color iconColor;
+  final bool mono;
 
-  const _HudStat({required this.icon, required this.value});
+  const _CompactChip({
+    required this.icon,
+    required this.label,
+    required this.iconColor,
+    this.mono = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 10, color: AppColors.primary),
+        Icon(icon, color: iconColor, size: 11),
         const SizedBox(width: 4),
         Text(
-          value,
-          style: const TextStyle(
+          label,
+          style: TextStyle(
             fontSize: 10,
-            fontWeight: FontWeight.w600,
             color: Colors.white,
+            fontFamily: mono ? 'monospace' : null,
+            fontWeight: FontWeight.w500,
+            letterSpacing: 0.2,
           ),
         ),
       ],
