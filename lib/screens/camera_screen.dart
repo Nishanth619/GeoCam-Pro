@@ -753,40 +753,34 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     );
   }
 
-  // ─── LANDSCAPE LAYOUT ───────────────────────────────────────────────────────
+  // ─── LANDSCAPE LAYOUT (iOS/FieldCam-inspired) ───────────────────────────────
   Widget _buildLandscapeLayout() {
     return Row(
       children: [
-        // LEFT panel: GPS HUD
+        // ── LEFT RAIL: camera controls (flash/ratio/switch) ──
         SafeArea(
+          right: false,
           child: Container(
-            width: 200,
+            width: 64,
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.centerLeft,
                 end: Alignment.centerRight,
                 colors: [
-                  Colors.black.withValues(alpha: 0.95),
-                  Colors.black.withValues(alpha: 0.6),
+                  Colors.black.withValues(alpha: 0.92),
+                  Colors.black.withValues(alpha: 0.0),
                 ],
               ),
             ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _buildTopToolbar(compact: true),
-                const Spacer(),
-                _buildGpsHud(compact: true),
-                const Spacer(),
-              ],
-            ),
+            child: _buildLeftRail(),
           ),
         ),
 
-        // CENTER: camera preview
+        // ── CENTER: full-bleed preview with GPS chips + zoom overlay ──
         Expanded(
           child: Stack(
             children: [
+              // Camera preview fills the entire center
               Positioned.fill(child: _buildCameraPreview()),
 
               // Shutter flash
@@ -806,14 +800,30 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                   child: const _FocusReticle(),
                 ),
 
-              // Vignette
+              // Vignette (subtle edges)
               Positioned.fill(child: _buildVignette()),
+
+              // Compact GPS info chips — bottom-left corner FieldCam style
+              Positioned(
+                left: 12,
+                bottom: 8,
+                child: _buildCompactGpsChips(),
+              ),
+
+              // Horizontal zoom slider pinned above the GPS chips
+              Positioned(
+                left: 12,
+                right: 12,
+                bottom: 60,
+                child: _buildHorizontalZoomSlider(),
+              ),
             ],
           ),
         ),
 
-        // RIGHT panel: controls
+        // ── RIGHT RAIL: gallery / shutter / templates (iOS-style) ──
         SafeArea(
+          left: false,
           child: Container(
             width: 90,
             decoration: BoxDecoration(
@@ -821,8 +831,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 begin: Alignment.centerRight,
                 end: Alignment.centerLeft,
                 colors: [
-                  Colors.black.withValues(alpha: 0.95),
-                  Colors.black.withValues(alpha: 0.6),
+                  Colors.black.withValues(alpha: 0.92),
+                  Colors.black.withValues(alpha: 0.0),
                 ],
               ),
             ),
@@ -836,6 +846,154 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
             ),
           ),
         ),
+      ],
+    );
+  }
+
+  /// Left vertical rail with flash / aspect ratio / camera switch — landscape only
+  Widget _buildLeftRail() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: [
+        // Flash (disabled for front camera)
+        Opacity(
+          opacity: _cameraService.isFrontCamera ? 0.35 : 1.0,
+          child: _ToolbarButton(
+            icon: _getFlashIcon(),
+            onTap: _cameraService.isFrontCamera ? null : _toggleFlash,
+          ),
+        ),
+        // Aspect ratio pill
+        GestureDetector(
+          onTap: _cycleAspectRatio,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+            ),
+            child: Text(
+              _aspectRatio,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+        ),
+        // Camera switch
+        _ToolbarButton(
+          icon: _isSwitchingCamera ? Icons.hourglass_empty : Icons.flip_camera_ios,
+          onTap: _isSwitchingCamera ? null : _switchCamera,
+        ),
+      ],
+    );
+  }
+
+  /// Compact GPS info chips overlaid on the preview — FieldCam / GPS Map Camera style
+  Widget _buildCompactGpsChips() {
+    final items = <({IconData icon, String label})>[];
+
+    if (_currentPosition != null) {
+      final coords = _settings.templateCoordFormat == 'Decimal Degrees (DD)'
+          ? _locationService.formatCoordinatesDD(
+              _currentPosition!.latitude, _currentPosition!.longitude)
+          : _locationService.formatCoordinatesDMS(
+              _currentPosition!.latitude, _currentPosition!.longitude);
+      items.add((icon: Icons.location_on, label: coords));
+    } else {
+      items.add((icon: Icons.location_searching, label: 'GPS…'));
+    }
+
+    if (_currentAddress != null && _settings.templateShowAddress) {
+      final short = _currentAddress!.split(',').take(2).join(', ');
+      items.add((icon: Icons.place_outlined, label: short));
+    }
+
+    if (_temperature != null) {
+      items.add((
+        icon: Icons.thermostat_outlined,
+        label: _settings.formatTemperature(_temperature),
+      ));
+    }
+
+    if (_settings.templateShowDateTime) {
+      final now = _currentTime;
+      final timeStr =
+          '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+      items.add((icon: Icons.schedule, label: timeStr));
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: items
+          .map(
+            (item) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.12),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(item.icon, color: const Color(0xFF4ADE80), size: 12),
+                    const SizedBox(width: 5),
+                    Text(
+                      item.label,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          )
+          .toList(),
+    );
+  }
+
+  /// Thin horizontal zoom slider for landscape mode (replaces vertical slider)
+  Widget _buildHorizontalZoomSlider() {
+    return Row(
+      children: [
+        const Icon(Icons.zoom_out, color: Colors.white54, size: 16),
+        Expanded(
+          child: SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 2,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+              activeTrackColor: const Color(0xFF4ADE80),
+              inactiveTrackColor: Colors.white24,
+              thumbColor: Colors.white,
+              overlayColor: Colors.white12,
+            ),
+            child: Slider(
+              value: _zoomLevel,
+              min: 0.0,
+              max: 1.0,
+              onChanged: (value) async {
+                setState(() => _zoomLevel = value);
+                await _cameraService.setZoom(value);
+              },
+            ),
+          ),
+        ),
+        const Icon(Icons.zoom_in, color: Colors.white54, size: 16),
       ],
     );
   }
@@ -886,93 +1044,59 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     );
   }
 
-  Widget _buildTopToolbar({bool compact = false}) {
+  Widget _buildTopToolbar() {
     return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: compact ? 8 : 24,
-        vertical: compact ? 8 : 16,
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.black.withValues(alpha: 0.8),
+            Colors.transparent,
+          ],
+        ),
       ),
-      decoration: compact
-          ? null
-          : BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.black.withValues(alpha: 0.8),
-                  Colors.transparent,
-                ],
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Opacity(
+            opacity: _cameraService.isFrontCamera ? 0.4 : 1.0,
+            child: _ToolbarButton(
+              icon: _getFlashIcon(),
+              onTap: _cameraService.isFrontCamera ? null : _toggleFlash,
+            ),
+          ),
+          GestureDetector(
+            onTap: _cycleAspectRatio,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.4),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+              ),
+              child: Text(
+                _aspectRatio,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white,
+                  letterSpacing: 1,
+                ),
               ),
             ),
-      child: compact
-          ? Column(
-              children: [
-                _ToolbarButton(
-                  icon: _getFlashIcon(),
-                  onTap: _cameraService.isFrontCamera ? null : _toggleFlash,
-                ),
-                const SizedBox(height: 8),
-                GestureDetector(
-                  onTap: _cycleAspectRatio,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.4),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      _aspectRatio,
-                      style: const TextStyle(fontSize: 11, color: Colors.white),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                _ToolbarButton(
-                  icon: _isSwitchingCamera ? Icons.hourglass_empty : Icons.flip_camera_ios,
-                  onTap: _isSwitchingCamera ? null : _switchCamera,
-                ),
-              ],
-            )
-          : Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Opacity(
-                  opacity: _cameraService.isFrontCamera ? 0.4 : 1.0,
-                  child: _ToolbarButton(
-                    icon: _getFlashIcon(),
-                    onTap: _cameraService.isFrontCamera ? null : _toggleFlash,
-                  ),
-                ),
-                GestureDetector(
-                  onTap: _cycleAspectRatio,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.4),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                    ),
-                    child: Text(
-                      _aspectRatio,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.white,
-                        letterSpacing: 1,
-                      ),
-                    ),
-                  ),
-                ),
-                _ToolbarButton(
-                  icon: _isSwitchingCamera ? Icons.hourglass_empty : Icons.flip_camera_ios,
-                  onTap: _isSwitchingCamera ? null : _switchCamera,
-                ),
-              ],
-            ),
+          ),
+          _ToolbarButton(
+            icon: _isSwitchingCamera ? Icons.hourglass_empty : Icons.flip_camera_ios,
+            onTap: _isSwitchingCamera ? null : _switchCamera,
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildGpsHud({bool compact = false}) {
+  Widget _buildGpsHud() {
     return GpsHudCard(
       address: _currentAddress ?? 'Acquiring location...',
       coordinates: _currentPosition != null
