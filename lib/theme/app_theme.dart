@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppColors {
-  // Primary colors
-  static const Color primary = Color(0xFF13EC80);
-  static const Color primaryDark = Color(0xFF0FD671);
+  // Primary colors (Sky Blue)
+  static const Color primary = Color(0xFF38BDF8);
+  static const Color primaryDark = Color(0xFF0EA5E9);
   
   // Background colors
   static const Color backgroundDark = Color(0xFF102219);
@@ -20,7 +20,7 @@ class AppColors {
   static const Color textMuted = Color(0xFF6B7280);
   
   // Status colors
-  static const Color success = Color(0xFF13EC80);
+  static const Color success = Color(0xFF38BDF8); // Using sky blue for success alignment
   static const Color error = Color(0xFFEF4444);
   static const Color warning = Color(0xFFF59E0B);
 }

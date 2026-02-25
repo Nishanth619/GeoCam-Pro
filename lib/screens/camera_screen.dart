@@ -946,7 +946,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(item.icon, color: const Color(0xFF4ADE80), size: 12),
+                    Icon(item.icon, color: AppColors.primary, size: 12),
                     const SizedBox(width: 5),
                     Text(
                       item.label,
@@ -977,7 +977,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               trackHeight: 2,
               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
               overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-              activeTrackColor: const Color(0xFF4ADE80),
+              activeTrackColor: AppColors.primary,
               inactiveTrackColor: Colors.white24,
               thumbColor: Colors.white,
               overlayColor: Colors.white12,
