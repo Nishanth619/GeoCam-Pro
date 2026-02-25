@@ -49,6 +49,7 @@ class _TemplateCustomizationSheetState extends State<TemplateCustomizationSheet>
     _settings.templateCoordFormat = _coordFormat;
     
     Navigator.pop(context);
+    _adService.showInterstitialAd();
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Professional settings applied'),

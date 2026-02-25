@@ -4,6 +4,7 @@ import 'camera_screen.dart';
 import 'map_view_screen.dart';
 import 'gallery_screen.dart';
 import 'settings_screen.dart';
+import '../services/ad_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -14,6 +15,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
+  final AdService _adService = AdService();
 
   final List<Widget> _screens = [
     const CameraScreen(),
@@ -32,6 +34,9 @@ class _HomeScreenState extends State<HomeScreen> {
       bottomNavigationBar: BottomNavBar(
         currentIndex: _currentIndex,
         onTap: (index) {
+          if (index == 3 && _currentIndex != 3) {
+            _adService.showInterstitialAd();
+          }
           setState(() {
             _currentIndex = index;
           });
