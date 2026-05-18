@@ -576,7 +576,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
                             child: const Text(
                               'OPEN',
                               style: TextStyle(
-                                color: Color(0xFF102219),
+                                color: Color(0xFF0F1A24),
                                 fontWeight: FontWeight.w900,
                                 fontSize: 10,
                                 letterSpacing: 0.5,

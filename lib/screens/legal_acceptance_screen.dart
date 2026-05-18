@@ -46,24 +46,24 @@ class _LegalAcceptanceScreenState extends State<LegalAcceptanceScreen> {
           children: [
             // Header
             Padding(
-              padding: const EdgeInsets.all(24),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
               child: Column(
                 children: [
-                  const Icon(Icons.gavel_outlined, size: 48, color: AppColors.primary),
-                  const SizedBox(height: 16),
+                  const Icon(Icons.gavel_outlined, size: 40, color: AppColors.primary),
+                  const SizedBox(height: 12),
                   const Text(
                     'Terms & Privacy',
                     style: TextStyle(
-                      fontSize: 24,
+                      fontSize: 22,
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Text(
                     'Please review and accept our terms to continue using GEOCAM PRO.',
                     style: TextStyle(
-                      fontSize: 14,
+                      fontSize: 13,
                       color: Colors.grey[400],
                     ),
                     textAlign: TextAlign.center,
@@ -107,9 +107,11 @@ class _LegalAcceptanceScreenState extends State<LegalAcceptanceScreen> {
 
             // Links to full documents
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 8,
+                runSpacing: 0,
                 children: [
                   TextButton.icon(
                     onPressed: () {
@@ -123,10 +125,11 @@ class _LegalAcceptanceScreenState extends State<LegalAcceptanceScreen> {
                         ),
                       );
                     },
-                    icon: const Icon(Icons.privacy_tip_outlined, size: 18),
-                    label: const Text('Read Full Privacy Policy'),
+                    icon: const Icon(Icons.privacy_tip_outlined, size: 16),
+                    label: const Text('Full Privacy Policy'),
                     style: TextButton.styleFrom(
                       foregroundColor: AppColors.primary,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     ),
                   ),
                   TextButton.icon(
@@ -141,10 +144,11 @@ class _LegalAcceptanceScreenState extends State<LegalAcceptanceScreen> {
                         ),
                       );
                     },
-                    icon: const Icon(Icons.description_outlined, size: 18),
-                    label: const Text('Read Full Terms'),
+                    icon: const Icon(Icons.description_outlined, size: 16),
+                    label: const Text('Full Terms & Conditions'),
                     style: TextButton.styleFrom(
                       foregroundColor: AppColors.primary,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     ),
                   ),
                 ],
@@ -153,15 +157,16 @@ class _LegalAcceptanceScreenState extends State<LegalAcceptanceScreen> {
 
             // Action Buttons
             Padding(
-              padding: const EdgeInsets.all(24),
+              padding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   PrimaryButton(
                     label: 'Accept & Continue',
                     onPressed: _onAccept,
                     icon: Icons.check_circle_outline,
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   TextButton(
                     onPressed: _onDecline,
                     child: Text(

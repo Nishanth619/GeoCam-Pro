@@ -1,22 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:geocam_flutter/l10n/app_localizations.dart';
+
 import 'theme/app_theme.dart';
-import 'screens/home_screen.dart';
-import 'screens/onboarding_screen.dart';
+import 'screens/splash_screen.dart';
 import 'services/settings_service.dart';
 import 'services/ad_service.dart';
 
-import 'screens/splash_screen.dart';
+// Global notifier for changing the app language without restarting
+final ValueNotifier<Locale?> appLocaleNotifier = ValueNotifier<Locale?>(null);
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Initialize settings service
+  // Initialize settings service (fast — just SharedPreferences)
   final settings = SettingsService();
   await settings.init();
   
-  // Initialize AdMob
-  await AdService().initialize();
+  // Load saved language
+  if (settings.appLanguage != 'auto') {
+    appLocaleNotifier.value = Locale(settings.appLanguage);
+  }
+  
+  // Initialize AdMob in the background — do NOT await.
+  AdService().initialize();
   
   // Set preferred orientations
   SystemChrome.setPreferredOrientations([
@@ -30,9 +38,9 @@ void main() async {
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.dark, // Dark icons for white splash
-      systemNavigationBarColor: Colors.white,
-      systemNavigationBarIconBrightness: Brightness.dark,
+      statusBarIconBrightness: Brightness.light, 
+      systemNavigationBarColor: Color(0xFF070E14),
+      systemNavigationBarIconBrightness: Brightness.light,
     ),
   );
   
@@ -54,15 +62,33 @@ class GeoCamApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'GeoCam',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkTheme,
-      // Start with the animated splash sequence
-      home: SplashScreen(
-        hasSeenOnboarding: hasSeenOnboarding,
-        hasAcceptedTerms: hasAcceptedTerms,
-      ),
+    return ValueListenableBuilder<Locale?>(
+      valueListenable: appLocaleNotifier,
+      builder: (context, locale, child) {
+        return MaterialApp(
+          title: 'GeoCam Pro',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.darkTheme,
+          localizationsDelegates: [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: [
+            Locale('en'),
+            Locale('ru'),
+            Locale('de'),
+            Locale('id'),
+            Locale('tl'),
+          ],
+          locale: locale, // null means auto-detect from device
+          home: SplashScreen(
+            hasSeenOnboarding: hasSeenOnboarding,
+            hasAcceptedTerms: hasAcceptedTerms,
+          ),
+        );
+      },
     );
   }
 }

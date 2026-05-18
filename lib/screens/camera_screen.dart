@@ -6,7 +6,8 @@ import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image/image.dart' as img;
-import 'package:google_mobile_ads/google_mobile_ads.dart';
+
+import 'package:sensors_plus/sensors_plus.dart';
 import '../theme/app_theme.dart';
 import '../widgets/gps_hud_card.dart';
 import '../widgets/zoom_slider.dart';
@@ -20,8 +21,11 @@ import '../services/settings_service.dart';
 import '../services/exif_service.dart';
 import '../services/watermark_service.dart';
 import '../models/photo_model.dart';
+import 'package:geocam_flutter/l10n/app_localizations.dart';
 import 'template_customization_sheet.dart';
 import 'gallery_screen.dart';
+import 'edit_location_screen.dart';
+import 'import_geotag_screen.dart';
 
 class CameraScreen extends StatefulWidget {
   const CameraScreen({super.key});
@@ -74,15 +78,48 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Offset? _focusPoint;
   bool _isFocusing = false;
   Timer? _focusTimer;
-  
+
+  // HUD orientation — sensor-driven, portrait-locked screen
+  double _hudRotationTurns = 0.0; // 0 = portrait, ±0.25 = landscape
+  StreamSubscription<AccelerometerEvent>? _sensorSubscription;
 
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Lock this screen to portrait; HUD rotates via sensor instead
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     _initializeAll();
     _startTimeUpdates();
+    _startSensorOrientation();
+  }
+
+  /// Listens to the accelerometer and updates [_hudRotationTurns].
+  /// Uses gravity-based detection: when the phone is sideways, the X-axis
+  /// gets the bulk of gravity (~9.8 m/s²) while Y-axis drops close to 0.
+  /// Threshold: |X| must dominate |Y| **and** exceed 4.5 m/s² (~27° from horizontal).
+  void _startSensorOrientation() {
+    _sensorSubscription = accelerometerEventStream(
+      samplingPeriod: const Duration(milliseconds: 200),
+    ).listen((AccelerometerEvent event) {
+      double turns;
+      // Gravity-based landscape detection:
+      //   Portrait:  Y ≈ 9.8, X ≈ 0    →  |Y| dominates  →  portrait
+      //   Landscape: X ≈ ±9.8, Y ≈ 0   →  |X| dominates  →  landscape
+      //   Flat/face-up: both small      →  neither meets threshold → portrait
+      if (event.x.abs() > event.y.abs() && event.x.abs() > 3.0) {
+        // Phone is sideways — landscape
+        turns = event.x > 0 ? -0.25 : 0.25;
+      } else {
+        // Phone is upright or flat — portrait
+        turns = 0.0;
+      }
+      debugPrint('🧭 Sensor → x=${event.x.toStringAsFixed(2)} y=${event.y.toStringAsFixed(2)} → turns=$turns _current=$_hudRotationTurns');
+      if (_hudRotationTurns != turns && mounted) {
+        setState(() => _hudRotationTurns = turns);
+      }
+    });
   }
 
 
@@ -102,7 +139,15 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     WidgetsBinding.instance.removeObserver(this);
     _positionSubscription?.cancel();
     _timeUpdateTimer?.cancel();
+    _sensorSubscription?.cancel();
     _cameraService.dispose();
+    // Restore all orientations when leaving the camera screen
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
     super.dispose();
   }
 
@@ -111,7 +156,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     if (state == AppLifecycleState.inactive) {
       _cameraService.dispose();
     } else if (state == AppLifecycleState.resumed) {
-      _initializeCamera();
+      _initializeCamera(silent: true);
     }
   }
 
@@ -130,36 +175,48 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
-  Future<void> _initializeCamera() async {
-    setState(() {
-      _isCameraInitializing = true;
-      _cameraError = null;
-    });
-
-    // Try to request permissions if not granted (shouldn't happen if user completed onboarding)
-    // But we'll be graceful and request them anyway
-    final hasCamera = await _permissionService.hasCameraPermission();
-    final hasStorage = await _permissionService.hasStoragePermission();
-    
-    if (!hasCamera) {
-      await _permissionService.requestCameraPermission();
-    }
-    
-    if (!hasStorage) {
-      await _permissionService.requestStoragePermission();
-    }
-
-    // Initialize camera regardless - let the camera service handle any permission errors
-    final success = await _cameraService.initializeController();
-    if (mounted) {
+  /// Initializes the camera.
+  /// [silent] = true: called from lifecycle/auto-resume. Errors are suppressed
+  ///   and a quiet retry is attempted. No red overlay is shown for transient failures.
+  /// [silent] = false (default): called on first launch or manual retry.
+  ///   Shows the error overlay if all retries fail.
+  Future<void> _initializeCamera({bool silent = false}) async {
+    if (!silent) {
       setState(() {
-        _isCameraInitializing = false;
-        _zoomLevel = 0.0; // Reset zoom on init
-        if (!success) {
-          _cameraError = 'Failed to initialize camera.\nPlease check permissions in Settings.';
-        }
+        _isCameraInitializing = true;
+        _cameraError = null;
       });
     }
+
+    // Check permissions — only request them in non-silent mode
+    final hasCamera = await _permissionService.hasCameraPermission();
+    final hasStorage = await _permissionService.hasMediaPermission();
+    
+    if (!silent) {
+      if (!hasCamera) await _permissionService.requestCameraPermission();
+      if (!hasStorage) await _permissionService.requestMediaPermission();
+    }
+
+    // Camera service already has 3-attempt retry logic internally
+    final success = await _cameraService.initializeController();
+
+    if (!mounted) return;
+
+    if (success) {
+      // Clear any lingering error on successful init
+      setState(() {
+        _isCameraInitializing = false;
+        _cameraError = null;
+        _zoomLevel = 0.0;
+      });
+    } else if (!silent) {
+      // Only show the red error overlay if this was an explicit (non-silent) call
+      setState(() {
+        _isCameraInitializing = false;
+        _cameraError = 'Failed to initialize camera.\nPlease check permissions in Settings.';
+      });
+    }
+    // If silent && failed: do nothing — camera will look frozen but no scary red screen
   }
 
   void _startLocationUpdates() async {
@@ -298,6 +355,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Future<void> _capturePhoto() async {
     if (_isCapturing || !_cameraService.isInitialized) return;
 
+    // ⚡ SNAPSHOT the sensor orientation NOW — before the async capture.
+    // The camera capture takes hundreds of ms, and the user may rotate
+    // the phone back to portrait by the time processing starts.
+    final double shutterRotationTurns = _hudRotationTurns;
+    debugPrint('📸 SHUTTER PRESSED → snapshot rotationTurns=$shutterRotationTurns');
+
     // 1. INSTANT FEEDBACK: Shutter sound (optional) and Visual Flash
     setState(() {
       _isCapturing = true;
@@ -320,8 +383,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       });
 
       if (imagePath != null) {
-        // Fire and forget the heavy processing tasks
-        unawaited(_processCapturedPhoto(imagePath));
+        // Fire and forget — pass the SNAPSHOTTED rotation, not the live one
+        unawaited(_processCapturedPhoto(imagePath, shutterRotationTurns));
         
         // Monetization: Trigger Interstitial ad logic
         _adService.onPhotoCaptured(showAfterCount: 3);
@@ -335,15 +398,21 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
   /// Background pipeline for heavy image processing
-  Future<void> _processCapturedPhoto(String imagePath) async {
+  /// [rotationTurns] is snapshotted at shutter press time, not read from live sensor.
+  Future<void> _processCapturedPhoto(String imagePath, double rotationTurns) async {
     try {
-      // Capture current state to ensure consistency across the background flow
+      // Capture current state to ensure consistency across the background flow.
+      // Prefer the effective position (manual override or GPS).
       final capturedAt = DateTime.now();
-      final position = _currentPosition;
-      final address = _currentAddress;
+      final position = _locationService.effectivePosition;
+      final address = _locationService.isManualOverrideActive
+          ? _locationService.manualOverrideAddress
+          : _currentAddress;
       final temp = _temperature;
       final weather = _weatherCondition;
       final currentAspectRatio = _aspectRatio;
+      debugPrint('📸 PROCESSING → rotationTurns=$rotationTurns (live _hudRotationTurns=$_hudRotationTurns)');
+      debugPrint('📍 Using ${_locationService.isManualOverrideActive ? "MANUAL" : "GPS"} position: ${position?.latitude}, ${position?.longitude}');
 
       // 1. Apply aspect ratio cropping if needed (using Isolate)
       if (currentAspectRatio != '4:3') {
@@ -377,10 +446,11 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           showMiniMap: true,
           mapType: _settings.templateMapType,
           opacity: _settings.watermarkOpacity,
+          rotationTurns: rotationTurns,
         );
+        debugPrint('🎨 Watermark done. rotationTurns=$rotationTurns → path=${watermarkedPath ?? "FAILED"}');
 
         if (watermarkedPath != null) {
-          final originalFile = File(imagePath);
           final watermarkedFile = File(watermarkedPath);
           await watermarkedFile.copy(imagePath);
           await watermarkedFile.delete();
@@ -551,20 +621,22 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       );
     }
 
-    if (_cameraService.isInitialized && _cameraService.controller != null) {
+    if (_cameraService.isInitialized && 
+        _cameraService.controller != null && 
+        _cameraService.controller!.value.isInitialized) {
       // Show overlay when switching cameras
       if (_isSwitchingCamera) {
         return Container(
           color: Colors.black,
-          child: const Center(
+          child: Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                CircularProgressIndicator(color: AppColors.primary),
-                SizedBox(height: 16),
+                const CircularProgressIndicator(color: AppColors.primary),
+                const SizedBox(height: 16),
                 Text(
-                  'Switching Camera...',
-                  style: TextStyle(color: AppColors.textMuted, fontSize: 16),
+                  AppLocalizations.of(context)!.cameraSwitching,
+                  style: const TextStyle(color: AppColors.textMuted, fontSize: 16),
                 ),
               ],
             ),
@@ -643,16 +715,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   @override
   Widget build(BuildContext context) {
-    return OrientationBuilder(
-      builder: (context, orientation) {
-        final isLandscape = orientation == Orientation.landscape;
-        return Scaffold(
-          backgroundColor: Colors.black,
-          body: isLandscape
-              ? _buildLandscapeLayout()
-              : _buildPortraitLayout(),
-        );
-      },
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: _buildPortraitLayout(),
     );
   }
 
@@ -709,7 +774,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           ),
         ),
 
-        // Bottom controls
+        // GPS HUD — edge-anchored, sensor-driven orientation
+        _buildOrientedHud(),
+
+        // Bottom controls (shutter row)
         Positioned(
           left: 0,
           right: 0,
@@ -732,7 +800,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _buildGpsHud(),
                   const SizedBox(height: 12),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 32),
@@ -755,249 +822,54 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     );
   }
 
-  // ─── LANDSCAPE LAYOUT (iOS/FieldCam-inspired) ───────────────────────────────
-  Widget _buildLandscapeLayout() {
-    return Row(
-      children: [
-        // ── LEFT RAIL: camera controls (flash/ratio/switch) ──
-        SafeArea(
-          right: false,
-          child: Container(
-            width: 64,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-                colors: [
-                  Colors.black.withValues(alpha: 0.92),
-                  Colors.black.withValues(alpha: 0.0),
-                ],
-              ),
-            ),
-            child: _buildLeftRail(),
-          ),
-        ),
+  // ─── ORIENTATION-AWARE HUD ───────────────────────────────────────────────────
+  // NOTE: We deliberately do NOT use AnimatedSwitcher here.
+  // AnimatedSwitcher keeps both the old and new child in the widget tree
+  // simultaneously during the cross-fade. This means two GpsHudCard (and thus
+  // two FlutterMap) instances are live at once → Flutter throws a
+  // "Duplicate GlobalKey" crash. Instant switch is safer.
+  Widget _buildOrientedHud() {
+    final screenH = MediaQuery.of(context).size.height;
+    // Landscape HUD occupies 62% of the long screen edge — wide enough to read, compact enough to not crowd the preview
+    final double landscapeHudWidth = screenH * 0.62;
 
-        // ── CENTER: full-bleed preview with GPS chips + zoom overlay ──
-        Expanded(
-          child: Stack(
-            children: [
-              // Camera preview fills the entire center
-              Positioned.fill(child: _buildCameraPreview()),
-
-              // Shutter flash
-              if (_showShutterEffect)
-                Positioned.fill(
-                  child: Container(color: Colors.white.withValues(alpha: 0.8)),
-                ),
-
-              // Tap-to-focus
-              Positioned.fill(child: _buildFocusOverlay()),
-
-              // Focus reticle
-              if (_isFocusing && _focusPoint != null)
-                Positioned(
-                  left: _focusPoint!.dx - 35,
-                  top: _focusPoint!.dy - 35,
-                  child: const _FocusReticle(),
-                ),
-
-              // Vignette (subtle edges)
-              Positioned.fill(child: _buildVignette()),
-
-              // Compact GPS info chips — bottom-left corner FieldCam style
-              Positioned(
-                left: 12,
-                bottom: 8,
-                child: _buildCompactGpsChips(),
-              ),
-
-              // Horizontal zoom slider pinned above the GPS chips
-              Positioned(
-                left: 12,
-                right: 12,
-                bottom: 60,
-                child: _buildHorizontalZoomSlider(),
-              ),
-            ],
-          ),
-        ),
-
-        // ── RIGHT RAIL: gallery / shutter / templates (iOS-style) ──
-        SafeArea(
-          left: false,
-          child: Container(
-            width: 90,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.centerRight,
-                end: Alignment.centerLeft,
-                colors: [
-                  Colors.black.withValues(alpha: 0.92),
-                  Colors.black.withValues(alpha: 0.0),
-                ],
-              ),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _buildGalleryThumbnail(),
-                _buildShutterButton(),
-                _buildTemplatesButton(),
-              ],
+    if (_hudRotationTurns == -0.25) {
+      // Tilted LEFT — HUD anchored to left edge, text reads upward
+      return Positioned.fill(
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: RotatedBox(
+            quarterTurns: 1,
+            child: SizedBox(
+              width: landscapeHudWidth,
+              child: _buildGpsHud(isLandscape: true),
             ),
           ),
         ),
-      ],
-    );
-  }
-
-  /// Left vertical rail with flash / aspect ratio / camera switch — landscape only
-  Widget _buildLeftRail() {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        // Flash (disabled for front camera)
-        Opacity(
-          opacity: _cameraService.isFrontCamera ? 0.35 : 1.0,
-          child: _ToolbarButton(
-            icon: _getFlashIcon(),
-            onTap: _cameraService.isFrontCamera ? null : _toggleFlash,
-          ),
-        ),
-        // Aspect ratio pill
-        GestureDetector(
-          onTap: _cycleAspectRatio,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
-            ),
-            child: Text(
-              _aspectRatio,
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: Colors.white,
-                letterSpacing: 0.5,
-              ),
+      );
+    } else if (_hudRotationTurns == 0.25) {
+      // Tilted RIGHT — HUD anchored to right edge, text reads downward
+      return Positioned.fill(
+        child: Align(
+          alignment: Alignment.centerRight,
+          child: RotatedBox(
+            quarterTurns: 3,
+            child: SizedBox(
+              width: landscapeHudWidth,
+              child: _buildGpsHud(isLandscape: true),
             ),
           ),
         ),
-        // Camera switch
-        _ToolbarButton(
-          icon: _isSwitchingCamera ? Icons.hourglass_empty : Icons.flip_camera_ios,
-          onTap: _isSwitchingCamera ? null : _switchCamera,
-        ),
-      ],
-    );
-  }
-
-  /// Compact GPS info chips overlaid on the preview — FieldCam / GPS Map Camera style
-  Widget _buildCompactGpsChips() {
-    final items = <({IconData icon, String label})>[];
-
-    if (_currentPosition != null) {
-      final coords = _settings.templateCoordFormat == 'Decimal Degrees (DD)'
-          ? _locationService.formatCoordinatesDD(
-              _currentPosition!.latitude, _currentPosition!.longitude)
-          : _locationService.formatCoordinatesDMS(
-              _currentPosition!.latitude, _currentPosition!.longitude);
-      items.add((icon: Icons.location_on, label: coords));
+      );
     } else {
-      items.add((icon: Icons.location_searching, label: 'GPS…'));
+      // Portrait — normal bottom position
+      return Positioned(
+        left: 0,
+        right: 0,
+        bottom: 116,
+        child: _buildGpsHud(isLandscape: false),
+      );
     }
-
-    if (_currentAddress != null && _settings.templateShowAddress) {
-      final short = _currentAddress!.split(',').take(2).join(', ');
-      items.add((icon: Icons.place_outlined, label: short));
-    }
-
-    if (_temperature != null) {
-      items.add((
-        icon: Icons.thermostat_outlined,
-        label: _settings.formatTemperature(_temperature),
-      ));
-    }
-
-    if (_settings.templateShowDateTime) {
-      final now = _currentTime;
-      final timeStr =
-          '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-      items.add((icon: Icons.schedule, label: timeStr));
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: items
-          .map(
-            (item) => Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.55),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.12),
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(item.icon, color: AppColors.primary, size: 12),
-                    const SizedBox(width: 5),
-                    Text(
-                      item.label,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                        letterSpacing: 0.3,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          )
-          .toList(),
-    );
-  }
-
-  /// Thin horizontal zoom slider for landscape mode (replaces vertical slider)
-  Widget _buildHorizontalZoomSlider() {
-    return Row(
-      children: [
-        const Icon(Icons.zoom_out, color: Colors.white54, size: 16),
-        Expanded(
-          child: SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              trackHeight: 2,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-              activeTrackColor: AppColors.primary,
-              inactiveTrackColor: Colors.white24,
-              thumbColor: Colors.white,
-              overlayColor: Colors.white12,
-            ),
-            child: Slider(
-              value: _zoomLevel,
-              min: 0.0,
-              max: 1.0,
-              onChanged: (value) async {
-                setState(() => _zoomLevel = value);
-                await _cameraService.setZoom(value);
-              },
-            ),
-          ),
-        ),
-        const Icon(Icons.zoom_in, color: Colors.white54, size: 16),
-      ],
-    );
   }
 
   // ─── SHARED SUB-WIDGETS ─────────────────────────────────────────────────────
@@ -1034,12 +906,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Colors.black.withValues(alpha: 0.6),
+              Colors.black.withValues(alpha: 0.25),
               Colors.transparent,
               Colors.transparent,
-              Colors.black.withValues(alpha: 0.6),
+              Colors.black.withValues(alpha: 0.5),
             ],
-            stops: const [0.0, 0.2, 0.8, 1.0],
+            stops: const [0.0, 0.15, 0.8, 1.0],
           ),
         ),
       ),
@@ -1054,7 +926,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            Colors.black.withValues(alpha: 0.8),
+            Colors.black.withValues(alpha: 0.35),
             Colors.transparent,
           ],
         ),
@@ -1089,46 +961,94 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               ),
             ),
           ),
-          _ToolbarButton(
-            icon: _isSwitchingCamera ? Icons.hourglass_empty : Icons.flip_camera_ios,
-            onTap: _isSwitchingCamera ? null : _switchCamera,
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Import & Geo-Tag button
+              _ToolbarButton(
+                icon: Icons.add_photo_alternate_outlined,
+                onTap: _openImportGeotag,
+              ),
+              const SizedBox(width: 8),
+              // Edit Location button — amber tint when manual override is active
+              _EditLocationButton(
+                isManualActive: _locationService.isManualOverrideActive,
+                onTap: _openEditLocation,
+              ),
+              const SizedBox(width: 8),
+              _ToolbarButton(
+                icon: _isSwitchingCamera ? Icons.hourglass_empty : Icons.flip_camera_ios,
+                onTap: _isSwitchingCamera ? null : _switchCamera,
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _buildGpsHud() {
+  void _openEditLocation() {
+    Navigator.of(context)
+        .push(MaterialPageRoute(
+          builder: (_) => const EditLocationScreen(),
+        ))
+        .then((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  void _openImportGeotag() {
+    Navigator.of(context)
+        .push(MaterialPageRoute(
+          builder: (_) => const ImportGeotagScreen(),
+        ))
+        .then((_) {
+      // Refresh last-photo thumbnail after import
+      if (mounted) _loadLastPhoto();
+    });
+  }
+
+  Widget _buildGpsHud({bool isLandscape = false}) {
+    final effective = _locationService.effectivePosition;
+    final isManual = _locationService.isManualOverrideActive;
+    final l10n = AppLocalizations.of(context)!;
+    final displayAddress = isManual
+        ? (_locationService.manualOverrideAddress ?? l10n.manualLocation)
+        : (_currentAddress ?? l10n.acquiringLocation);
     return GpsHudCard(
-      address: _currentAddress ?? 'Acquiring location...',
-      coordinates: _currentPosition != null
+      isLandscape: isLandscape,
+      address: displayAddress,
+      coordinates: effective != null
           ? (_settings.templateCoordFormat == 'Decimal Degrees (DD)'
               ? _locationService.formatCoordinatesDD(
-                  _currentPosition!.latitude,
-                  _currentPosition!.longitude,
+                  effective.latitude,
+                  effective.longitude,
                 )
               : _locationService.formatCoordinatesDMS(
-                  _currentPosition!.latitude,
-                  _currentPosition!.longitude,
+                  effective.latitude,
+                  effective.longitude,
                 ))
-          : 'GPS Signal...',
-      altitude: _currentPosition?.altitude != null
-          ? _settings.formatAltitude(_currentPosition!.altitude)
+          : l10n.noGpsSignal,
+      altitude: effective?.altitude != null
+          ? _settings.formatAltitude(effective!.altitude)
           : '--',
       temperature: _temperature != null
           ? _settings.formatTemperature(_temperature)
           : '--',
-      gpsSignal: _locationService.getGpsSignalStrength(_currentPosition?.accuracy),
+      gpsSignal: isManual
+          ? l10n.gpsManual
+          : _locationService.getGpsSignalStrength(_currentPosition?.accuracy),
       dateTime: _currentTime,
-      latitude: _currentPosition?.latitude,
-      longitude: _currentPosition?.longitude,
-      heading: _currentPosition?.heading,
+      latitude: effective?.latitude,
+      longitude: effective?.longitude,
+      heading: effective?.heading,
       showAddress: _settings.templateShowAddress,
       showCoordinates: _settings.templateShowCoordinates,
       showCompass: _settings.templateShowCompass,
       showDateTime: _settings.templateShowDateTime,
       mapType: _settings.templateMapType,
       dateFormat: _settings.templateDateFormat,
+      isManualLocation: isManual,
     );
   }
 
@@ -1215,7 +1135,9 @@ void _processImageCrop(Map<String, dynamic> message) {
         ratio = 1.0;
         break;
       case '16:9':
-        ratio = 16 / 9;
+        // Sensor captures incoming image as portrait (width < height).
+        // For a 16:9 aspect ratio output, the portrait crop must be 9:16.
+        ratio = 9 / 16;
         break;
       default:
         return;
@@ -1273,6 +1195,51 @@ class _ToolbarButton extends StatelessWidget {
     );
   }
 }
+
+/// Toolbar button for "Edit Location" — glows amber when override is active.
+class _EditLocationButton extends StatelessWidget {
+  final bool isManualActive;
+  final VoidCallback? onTap;
+
+  const _EditLocationButton({required this.isManualActive, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: isManualActive
+              ? const Color(0xFFF59E0B).withValues(alpha: 0.2)
+              : Colors.black.withValues(alpha: 0.2),
+          shape: BoxShape.circle,
+          border: isManualActive
+              ? Border.all(
+                  color: const Color(0xFFF59E0B).withValues(alpha: 0.6),
+                  width: 1.5)
+              : null,
+          boxShadow: isManualActive
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFFF59E0B).withValues(alpha: 0.3),
+                    blurRadius: 12,
+                  )
+                ]
+              : null,
+        ),
+        child: Icon(
+          Icons.edit_location_alt_outlined,
+          color: isManualActive ? const Color(0xFFF59E0B) : Colors.white,
+          size: 24,
+        ),
+      ),
+    );
+  }
+}
+
 
 /// Private widget for the animated focus reticle
 class _FocusReticle extends StatefulWidget {

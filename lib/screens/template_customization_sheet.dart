@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../services/settings_service.dart';
 import '../services/ad_service.dart';
+import 'package:geocam_flutter/l10n/app_localizations.dart';
 
 class TemplateCustomizationSheet extends StatefulWidget {
   const TemplateCustomizationSheet({super.key});
@@ -23,7 +24,13 @@ class _TemplateCustomizationSheetState extends State<TemplateCustomizationSheet>
   late String _dateFormat;
   late String _coordFormat;
 
-  final List<String> _mapTypes = ['Normal', 'Satellite', 'Terrain', 'Hybrid'];
+  List<String> _getMapTypes(AppLocalizations l10n) => [
+        l10n.templateNormal,
+        l10n.templateSatellite,
+        l10n.templateTerrain,
+        l10n.templateHybrid
+      ];
+
   final List<String> _dateFormats = ['DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY-MM-DD'];
   final List<String> _coordFormats = ['Decimal Degrees (DD)', 'Degrees Minutes Seconds (DMS)'];
 
@@ -47,12 +54,14 @@ class _TemplateCustomizationSheetState extends State<TemplateCustomizationSheet>
     _settings.templateShowDateTime = _showDateTime;
     _settings.templateDateFormat = _dateFormat;
     _settings.templateCoordFormat = _coordFormat;
-    
+
+    // Capture messenger BEFORE popping — the widget will be unmounted after pop.
+    final messenger = ScaffoldMessenger.of(context);
     Navigator.pop(context);
     _adService.showInterstitialAd();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Professional settings applied'),
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(AppLocalizations.of(context)!.templateSettingsApplied),
         backgroundColor: AppColors.primary,
         behavior: SnackBarBehavior.floating,
       ),
@@ -113,9 +122,9 @@ class _TemplateCustomizationSheetState extends State<TemplateCustomizationSheet>
                           ),
                         ),
                         const SizedBox(height: 8),
-                        const Text(
-                          'Template Customization',
-                          style: TextStyle(
+                        Text(
+                          AppLocalizations.of(context)!.templateTitle,
+                          style: const TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.bold,
                             color: Colors.white,
@@ -132,50 +141,50 @@ class _TemplateCustomizationSheetState extends State<TemplateCustomizationSheet>
                       padding: const EdgeInsets.symmetric(horizontal: 24),
                       children: [
                         const SizedBox(height: 8),
-                        _buildSectionHeader('CHOOSE MAP STYLE', Icons.auto_awesome),
+                        _buildSectionHeader(AppLocalizations.of(context)!.templateMapType.toUpperCase(), Icons.auto_awesome),
                         const SizedBox(height: 16),
-                        _buildMapTypeCarousel(),
+                        _buildMapTypeCarousel(AppLocalizations.of(context)!),
                         const SizedBox(height: 32),
                         
-                        _buildSectionHeader('DATA FIELDS VISIBILITY', Icons.view_quilt_outlined),
+                        _buildSectionHeader(AppLocalizations.of(context)!.templateDataFields, Icons.view_quilt_outlined),
                         const SizedBox(height: 16),
                         _DataFieldToggle(
                           icon: Icons.location_on_outlined,
-                          label: 'Full Address',
+                          label: AppLocalizations.of(context)!.templateFullAddress,
                           value: _showAddress,
                           onChanged: (v) => setState(() => _showAddress = v),
                         ),
                         _DataFieldToggle(
                           icon: Icons.my_location_outlined,
-                          label: 'GPS Coordinates',
+                          label: AppLocalizations.of(context)!.templateGpsCoordinates,
                           value: _showCoordinates,
                           onChanged: (v) => setState(() => _showCoordinates = v),
                         ),
                         _DataFieldToggle(
                           icon: Icons.explore_outlined,
-                          label: 'Compass & Heading',
+                          label: AppLocalizations.of(context)!.templateCompassHeading,
                           value: _showCompass,
                           onChanged: (v) => setState(() => _showCompass = v),
                         ),
                         _DataFieldToggle(
                           icon: Icons.calendar_today_outlined,
-                          label: 'Date & Time Stamp',
+                          label: AppLocalizations.of(context)!.templateDateTimeStamp,
                           value: _showDateTime,
                           onChanged: (v) => setState(() => _showDateTime = v),
                         ),
                         const SizedBox(height: 32),
                         
-                        _buildSectionHeader('DISPLAY FORMATS', Icons.settings_outlined),
+                        _buildSectionHeader(AppLocalizations.of(context)!.templateDisplayFormats, Icons.settings_outlined),
                         const SizedBox(height: 16),
                         _FormatSelector(
-                          label: 'Date Display',
+                          label: AppLocalizations.of(context)!.templateDateDisplay,
                           options: _dateFormats,
                           selectedValue: _dateFormat,
                           onChanged: (v) => setState(() => _dateFormat = v),
                         ),
                         const SizedBox(height: 16),
                         _FormatSelector(
-                          label: 'Coordinate Precision',
+                          label: AppLocalizations.of(context)!.templateCoordPrecision,
                           options: _coordFormats,
                           selectedValue: _coordFormat,
                           onChanged: (v) => setState(() => _coordFormat = v),
@@ -186,13 +195,13 @@ class _TemplateCustomizationSheetState extends State<TemplateCustomizationSheet>
                           onPressed: _saveAndClose,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primary,
-                            foregroundColor: const Color(0xFF102219),
+                            foregroundColor: const Color(0xFF0F1A24),
                             minimumSize: const Size(double.infinity, 56),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                             elevation: 8,
                             shadowColor: AppColors.primary.withValues(alpha: 0.3),
                           ),
-                          child: const Text('APPLY TEMPLATE'),
+                          child: Text(AppLocalizations.of(context)!.templateApplyBtn),
                         ),
                         const SizedBox(height: 40),
                       ],
@@ -225,13 +234,14 @@ class _TemplateCustomizationSheetState extends State<TemplateCustomizationSheet>
     );
   }
 
-  Widget _buildMapTypeCarousel() {
+  Widget _buildMapTypeCarousel(AppLocalizations l10n) {
+    final mapTypes = _getMapTypes(l10n);
     return SizedBox(
       height: 110,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         clipBehavior: Clip.none,
-        itemCount: _mapTypes.length,
+        itemCount: mapTypes.length,
         itemBuilder: (context, index) {
           final isSelected = index == _selectedMapType;
           return GestureDetector(
@@ -281,7 +291,7 @@ class _TemplateCustomizationSheetState extends State<TemplateCustomizationSheet>
                       children: [
                         Icon(
                           _getMapIcon(index),
-                          color: isSelected ? const Color(0xFF102219) : Colors.white70,
+                          color: isSelected ? const Color(0xFF0F1A24) : Colors.white70,
                           size: 26,
                         ),
                         // Lock icon for non-free styles if not unlocked
@@ -296,12 +306,12 @@ class _TemplateCustomizationSheetState extends State<TemplateCustomizationSheet>
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    _mapTypes[index].toUpperCase(),
+                    mapTypes[index].toUpperCase(),
                     style: TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.w900,
                       letterSpacing: 0.5,
-                      color: isSelected ? const Color(0xFF102219) : Colors.white70,
+                      color: isSelected ? const Color(0xFF0F1A24) : Colors.white70,
                     ),
                   ),
                 ],
@@ -317,16 +327,16 @@ class _TemplateCustomizationSheetState extends State<TemplateCustomizationSheet>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF102219),
-        title: const Text('Unlock Premium Styles', style: TextStyle(color: Colors.white)),
-        content: const Text(
-          'Watch a quick ad to unlock all premium template styles for 24 hours!',
-          style: TextStyle(color: Colors.white70),
+        backgroundColor: const Color(0xFF0F1A24),
+        title: Text(AppLocalizations.of(context)!.templateUnlockPremium, style: const TextStyle(color: Colors.white)),
+        content: Text(
+          AppLocalizations.of(context)!.templateUnlockMessage,
+          style: const TextStyle(color: Colors.white70),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('CANCEL', style: TextStyle(color: Colors.grey)),
+            child: Text(AppLocalizations.of(context)!.cancel, style: const TextStyle(color: Colors.grey)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
@@ -334,7 +344,7 @@ class _TemplateCustomizationSheetState extends State<TemplateCustomizationSheet>
               Navigator.pop(context);
               _unlockWithAd(index);
             },
-            child: const Text('WATCH AD', style: TextStyle(color: Colors.black)),
+            child: Text(AppLocalizations.of(context)!.templateWatchAd, style: const TextStyle(color: Colors.black)),
           ),
         ],
       ),
@@ -350,13 +360,13 @@ class _TemplateCustomizationSheetState extends State<TemplateCustomizationSheet>
             _selectedMapType = index;
           });
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('🎉 Premium Styles unlocked for 24 hours!')),
+            SnackBar(content: Text(AppLocalizations.of(context)!.templatePremiumUnlocked)),
           );
         },
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Ad not ready, please try again.')),
+        SnackBar(content: Text(AppLocalizations.of(context)!.templateAdNotReady)),
       );
     }
   }
@@ -478,7 +488,7 @@ class _FormatSelector extends StatelessWidget {
           DropdownButton<String>(
             value: selectedValue,
             isExpanded: true,
-            dropdownColor: const Color(0xFF102219),
+            dropdownColor: const Color(0xFF0F1A24),
             underline: const SizedBox.shrink(),
             icon: const Icon(Icons.expand_more, color: AppColors.primary, size: 20),
             style: const TextStyle(

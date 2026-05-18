@@ -1,7 +1,12 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+
+import 'settings_service.dart';
 
 /// Service to handle location operations with offline fallback
 class LocationService {
@@ -10,11 +15,53 @@ class LocationService {
   LocationService._internal();
 
   Position? _lastPosition;
-  
+
+  // ============= Manual Location Override =============
+  // When set, all app features (watermark, EXIF, HUD) use this instead of GPS.
+  Position? _manualOverridePosition;
+  String? _manualOverrideAddress;
+
+  /// True when the user has manually pinned a location.
+  bool get isManualOverrideActive => _manualOverridePosition != null;
+
+  /// The address string for the manual pin (reverse-geocoded by EditLocationScreen).
+  String? get manualOverrideAddress => _manualOverrideAddress;
+
+  /// Returns the manual position if active, otherwise the last real GPS fix.
+  Position? get effectivePosition =>
+      _manualOverridePosition ?? _lastPosition;
+
+  /// Sets a manual location override.
+  /// [address] should be the reverse-geocoded address string.
+  void setManualOverride(double lat, double lng, String address) {
+    // Build a synthetic Position object so the rest of the app treats it uniformly.
+    _manualOverridePosition = Position(
+      latitude: lat,
+      longitude: lng,
+      timestamp: DateTime.now(),
+      accuracy: 0.0,
+      altitude: 0.0,
+      altitudeAccuracy: 0.0,
+      heading: 0.0,
+      headingAccuracy: 0.0,
+      speed: 0.0,
+      speedAccuracy: 0.0,
+    );
+    _manualOverrideAddress = address;
+    debugPrint('📍 Manual location override set: $lat, $lng — "$address"');
+  }
+
+  /// Clears the manual override and returns to live GPS.
+  void clearManualOverride() {
+    _manualOverridePosition = null;
+    _manualOverrideAddress = null;
+    debugPrint('📍 Manual location override cleared — returning to GPS');
+  }
+
   // Offline geocoding cache (store last 100 lookups)
   static final Map<String, String> _geocodeCache = {};
   static const int _maxCacheSize = 100;
-  
+
   Position? get lastPosition => _lastPosition;
 
   /// Check if location services are enabled
@@ -161,6 +208,12 @@ class LocationService {
     }
 
     try {
+      final appLang = SettingsService().appLanguage;
+      final localeIdentifier = appLang == 'auto' ? null : (appLang == 'tl' ? 'en_US' : '${appLang}_$appLang'.toUpperCase());
+
+      if (localeIdentifier != null) {
+        await setLocaleIdentifier(localeIdentifier);
+      }
       List<Placemark> placemarks = await placemarkFromCoordinates(lat, lon);
       if (placemarks.isNotEmpty) {
         Placemark place = placemarks.first;
@@ -241,6 +294,111 @@ class LocationService {
     } catch (e) {
       debugPrint('Error getting address (using fallback): $e');
       return _getOfflineFallbackAddress(lat, lon);
+    }
+  }
+
+  /// Convert address text to coordinates (Forward Geocoding)
+  Future<Location?> getCoordinatesFromAddress(String address) async {
+    try {
+      List<Location> locations = await locationFromAddress(address);
+      if (locations.isNotEmpty) {
+        return locations.first;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Error getting coordinates from address: $e');
+      return null;
+    }
+  }
+
+  /// Get autocomplete suggestions from Photon (Komoot) API — production grade.
+  /// • 8-second network timeout prevents UI hangs on slow connections.
+  /// • Deduplicates results by rounded coordinates (~11m precision).
+  /// • Builds richly structured display names (street → city → state → country).
+  Future<List<Map<String, dynamic>>> getAddressSuggestions(String query) async {
+    if (query.trim().length < 2) return [];
+
+    try {
+      final appLang = SettingsService().appLanguage;
+      final langCode = appLang == 'auto' || appLang == 'tl' ? 'en' : appLang;
+
+      final url = Uri.parse(
+        'https://photon.komoot.io/api/?q=${Uri.encodeComponent(query.trim())}&limit=10&lang=$langCode',
+      );
+
+      final response = await http
+          .get(url, headers: {
+            'User-Agent': 'GeocamPro/1.0 (geocam.app)',
+            'Accept-Language': '$langCode,en;q=0.9',
+          })
+          .timeout(const Duration(seconds: 8));
+
+      if (response.statusCode != 200) return [];
+
+      final data = json.decode(response.body) as Map<String, dynamic>;
+      final List<dynamic> features = data['features'] ?? [];
+
+      final seen = <String>{};
+      final results = <Map<String, dynamic>>[];
+
+      for (final item in features) {
+        final props = (item['properties'] ?? {}) as Map<String, dynamic>;
+        final geometry = item['geometry'];
+        if (geometry == null) continue;
+        final coords = geometry['coordinates'];
+        if (coords == null || coords is! List || coords.length < 2) continue;
+
+        final lat = (coords[1] as num).toDouble();
+        final lon = (coords[0] as num).toDouble();
+
+        // Deduplicate by rounded coordinate key (~11m grid)
+        final key = '${lat.toStringAsFixed(4)},${lon.toStringAsFixed(4)}';
+        if (seen.contains(key)) continue;
+        seen.add(key);
+
+        // Build a rich display name: most specific → least specific
+        final street  = props['street']  as String? ?? '';
+        final housenr = props['housenumber'] as String? ?? '';
+        final name    = props['name']    as String? ?? '';
+        final district= props['district'] as String? ?? '';
+        final city    = (props['city'] ?? props['town'] ?? props['village'] ?? '') as String;
+        final state   = props['state']   as String? ?? '';
+        final country = props['country'] as String? ?? '';
+
+        // First part: most specific label
+        final primary = [
+          if (housenr.isNotEmpty && street.isNotEmpty) '$housenr $street'
+          else if (street.isNotEmpty) street
+          else if (name.isNotEmpty) name,
+        ].join();
+
+        final parts = <String>[
+          if (primary.isNotEmpty) primary,
+          if (district.isNotEmpty && district != city) district,
+          if (city.isNotEmpty) city,
+          if (state.isNotEmpty && state != city) state,
+          if (country.isNotEmpty) country,
+        ];
+
+        // Preserve insertion order — no Set (we already dedup by coords)
+        final displayName = parts.isEmpty ? 'Unknown Location' : parts.join(', ');
+
+        results.add({
+          'display_name': displayName,
+          'lat': lat,
+          'lon': lon,
+        });
+
+        if (results.length >= 6) break; // cap at 6 clean results
+      }
+
+      return results;
+    } on TimeoutException {
+      debugPrint('Address suggestion request timed out');
+      return [];
+    } catch (e) {
+      debugPrint('Error getting address suggestions: $e');
+      return [];
     }
   }
 

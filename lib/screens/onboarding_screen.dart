@@ -159,7 +159,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
             // Page content area
             Expanded(
               flex: 4,
@@ -187,7 +187,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                                     TextSpan(
                                       text: '${_pages[index].title} ',
                                       style: const TextStyle(
-                                        fontSize: 32,
+                                        fontSize: 30,
                                         fontWeight: FontWeight.bold,
                                         color: Colors.white,
                                       ),
@@ -195,7 +195,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                                     TextSpan(
                                       text: _pages[index].highlight,
                                       style: const TextStyle(
-                                        fontSize: 32,
+                                        fontSize: 30,
                                         fontWeight: FontWeight.bold,
                                         color: AppColors.primary,
                                       ),
@@ -203,11 +203,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                                   ],
                                 ),
                               ),
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 10),
                               Text(
                                 _pages[index].description,
                                 style: TextStyle(
-                                  fontSize: 15,
+                                  fontSize: 14,
                                   height: 1.5,
                                   color: Colors.grey[400],
                                 ),
@@ -239,7 +239,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 20),
                   // Next button - FIXED AT BOTTOM
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -249,7 +249,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       onPressed: _nextPage,
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
                   // Legal Footnote
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -301,7 +301,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       textAlign: TextAlign.center,
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 16),
                 ],
               ),
             ),

@@ -6,6 +6,7 @@ import 'package:share_plus/share_plus.dart';
 import '../theme/app_theme.dart';
 import '../models/photo_model.dart';
 import '../services/database_service.dart';
+import 'package:geocam_flutter/l10n/app_localizations.dart';
 
 class PhotoDetailScreen extends StatefulWidget {
   final String? imagePath;
@@ -44,21 +45,22 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
   }
 
   Future<void> _deletePhoto() async {
+    final l10n = AppLocalizations.of(context)!;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.cardDark,
-        title: const Text('Delete Photo'),
-        content: const Text('Are you sure you want to delete this photo?'),
+        title: Text(l10n.photoDeleteTitle),
+        content: Text(l10n.photoDeleteMessage),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(AppLocalizations.of(context)!.galleryCancelBtn),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
+            child: Text(AppLocalizations.of(context)!.galleryDeleteBtn),
           ),
         ],
       ),
@@ -108,23 +110,23 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
                         ],
                       ),
                     ),
-                    child: const Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.image_not_supported_outlined,
-                            size: 80,
-                            color: AppColors.textMuted,
-                          ),
-                          SizedBox(height: 16),
-                          Text(
-                            'Image not found',
-                            style: TextStyle(color: AppColors.textMuted),
-                          ),
-                        ],
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.image_not_supported_outlined,
+                              size: 80,
+                              color: AppColors.textMuted,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              AppLocalizations.of(context)!.photoImageNotFound,
+                              style: const TextStyle(color: AppColors.textMuted),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
                   ),
           ),
           
@@ -229,7 +231,7 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
               if (_photo != null) {
                 Clipboard.setData(ClipboardData(text: _photo!.coordinatesDD));
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Coordinates copied')),
+                  SnackBar(content: Text(AppLocalizations.of(context)!.photoCoordscopied)),
                 );
               }
             },
@@ -348,9 +350,9 @@ class _ShareBottomSheet extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 24),
-          const Text(
-            'Share Photo',
-            style: TextStyle(
+          Text(
+            AppLocalizations.of(context)!.photoShareTitle,
+            style: const TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
               color: Colors.white,
@@ -363,15 +365,15 @@ class _ShareBottomSheet extends StatelessWidget {
               children: [
                 _ShareOption(
                   icon: Icons.photo,
-                  title: 'Share Photo',
-                  subtitle: 'Share the image file',
+                  title: AppLocalizations.of(context)!.photoShareTitle,
+                  subtitle: AppLocalizations.of(context)!.photoShareSubtitle,
                   onTap: () => _sharePhoto(context),
                 ),
                 const SizedBox(height: 12),
                 _ShareOption(
                   icon: Icons.location_on,
-                  title: 'Share with GPS Data',
-                  subtitle: 'Include location info in caption',
+                  title: AppLocalizations.of(context)!.photoShareWithGps,
+                  subtitle: AppLocalizations.of(context)!.photoShareWithGpsSubtitle,
                   onTap: () => _shareWithGpsData(context),
                 ),
               ],

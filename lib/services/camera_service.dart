@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui' show Offset;
 import 'package:flutter/foundation.dart';
 import 'package:camera/camera.dart';
 import 'package:path_provider/path_provider.dart';
@@ -19,29 +18,55 @@ class CameraService {
   bool _isInitialized = false;
   int _currentCameraIndex = 0;
   FlashMode _currentFlashMode = FlashMode.off;
+  Future<bool>? _initFuture;
 
   CameraController? get controller => _controller;
   bool get isInitialized => _isInitialized;
   List<CameraDescription>? get cameras => _cameras;
 
-  /// Initialize available cameras
-  Future<bool> initializeCameras() async {
+  /// Initialize available cameras (with retry for permission propagation)
+  Future<bool> initializeCameras({int retryCount = 0}) async {
     try {
       _cameras = await availableCameras();
       if (_cameras == null || _cameras!.isEmpty) {
-        debugPrint('No cameras available');
+        if (retryCount < 2) {
+          debugPrint('No cameras found, retrying in 500ms... ($retryCount)');
+          await Future.delayed(const Duration(milliseconds: 500));
+          return initializeCameras(retryCount: retryCount + 1);
+        }
+        debugPrint('No cameras available after retries');
         return false;
       }
       debugPrint('Found ${_cameras!.length} cameras');
       return true;
     } catch (e) {
       debugPrint('Error initializing cameras: $e');
+      if (retryCount < 2) {
+        await Future.delayed(const Duration(milliseconds: 500));
+        return initializeCameras(retryCount: retryCount + 1);
+      }
       return false;
     }
   }
 
   /// Initialize camera controller with specified camera
-  Future<bool> initializeController({int cameraIndex = 0}) async {
+  Future<bool> initializeController({int cameraIndex = 0, int retryCount = 0}) async {
+    // Prevent concurrent initialization
+    if (_initFuture != null && retryCount == 0) {
+      return await _initFuture!;
+    }
+    
+    _initFuture = _doInitializeController(cameraIndex: cameraIndex, retryCount: retryCount);
+    try {
+      return await _initFuture!;
+    } finally {
+      if (retryCount == 0) {
+        _initFuture = null;
+      }
+    }
+  }
+
+  Future<bool> _doInitializeController({int cameraIndex = 0, int retryCount = 0}) async {
     if (_cameras == null || _cameras!.isEmpty) {
       final success = await initializeCameras();
       if (!success) return false;
@@ -86,10 +111,20 @@ class CameraService {
     } on CameraException catch (e) {
       debugPrint('CameraException: ${e.code} - ${e.description}');
       _isInitialized = false;
+      if (retryCount < 3) {
+        debugPrint('Retrying controller init in 1000ms... ($retryCount)');
+        await Future.delayed(const Duration(milliseconds: 1000));
+        return _doInitializeController(cameraIndex: cameraIndex, retryCount: retryCount + 1);
+      }
       return false;
     } catch (e) {
       debugPrint('Error initializing camera controller: $e');
       _isInitialized = false;
+      if (retryCount < 3) {
+        debugPrint('Retrying controller init after generic error in 1000ms... ($retryCount)');
+        await Future.delayed(const Duration(milliseconds: 1000));
+        return _doInitializeController(cameraIndex: cameraIndex, retryCount: retryCount + 1);
+      }
       return false;
     }
   }

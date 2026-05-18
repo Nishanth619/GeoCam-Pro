@@ -7,6 +7,8 @@ import '../widgets/permission_card.dart';
 import '../services/database_service.dart';
 import '../services/settings_service.dart';
 import '../services/export_service.dart';
+import 'package:geocam_flutter/l10n/app_localizations.dart';
+import '../main.dart';
 import 'watermark_editor_screen.dart';
 import 'premium_screen.dart';
 import 'legal_content_screen.dart';
@@ -54,22 +56,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (mounted) setState(() {});
   }
 
+  String _getLanguageDisplayName(String code, AppLocalizations l10n) {
+    switch (code) {
+      case 'en': return 'English';
+      case 'ru': return 'Русский';
+      case 'de': return 'Deutsch';
+      case 'id': return 'Bahasa Indonesia';
+      case 'tl': return 'Filipino';
+      default: return l10n.settingsLanguageAuto;
+    }
+  }
+
+  String _getLanguageCode(String displayName, AppLocalizations l10n) {
+    if (displayName == 'English') return 'en';
+    if (displayName == 'Русский') return 'ru';
+    if (displayName == 'Deutsch') return 'de';
+    if (displayName == 'Bahasa Indonesia') return 'id';
+    if (displayName == 'Filipino') return 'tl';
+    return 'auto';
+  }
+
   Future<void> _clearAllPhotos() async {
+    final l10n = AppLocalizations.of(context)!;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.cardDark,
-        title: const Text('Clear All Photos'),
-        content: Text('Delete all $_photoCount photos? This cannot be undone.'),
+        title: Text(l10n.settingsClearAllTitle),
+        content: Text(l10n.settingsClearAllMessage(_photoCount)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(l10n.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete All'),
+            child: Text(l10n.settingsClearAllConfirm),
           ),
         ],
       ),
@@ -84,13 +107,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('All photos deleted')),
+          SnackBar(content: Text(l10n.settingsAllPhotosDeleted)),
         );
       }
     }
   }
 
   Future<void> _exportData(String format) async {
+    final l10n = AppLocalizations.of(context)!;
     setState(() => _isExporting = true);
     
     String? filePath;
@@ -111,9 +135,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (filePath != null && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Exported to ${format.toUpperCase()}'),
+          content: Text(l10n.settingsExportedTo(format.toUpperCase())),
           action: SnackBarAction(
-            label: 'Share',
+            label: l10n.settingsShareAction,
             onPressed: () => Share.shareXFiles([XFile(filePath!)]),
           ),
         ),
@@ -121,7 +145,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(_photoCount == 0 ? 'No photos to export' : 'Export failed'),
+          content: Text(_photoCount == 0 ? l10n.settingsNoPhotosExport : l10n.settingsExportFailed),
           backgroundColor: Colors.red,
         ),
       );
@@ -129,6 +153,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showExportOptions() {
+    final l10n = AppLocalizations.of(context)!;
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.cardDark,
@@ -142,9 +167,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Export GPS Data',
-                style: TextStyle(
+              Text(
+                l10n.settingsExportGpsTitle,
+                style: const TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
                   color: Colors.white,
@@ -152,7 +177,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Export $_photoCount photo locations',
+                l10n.settingsExportLocations(_photoCount),
                 style: TextStyle(
                   color: Colors.grey[400],
                 ),
@@ -160,8 +185,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const SizedBox(height: 24),
               _ExportOption(
                 icon: Icons.map,
-                title: 'GPX File',
-                subtitle: 'For GPS devices & mapping apps',
+                title: l10n.settingsGpxFile,
+                subtitle: l10n.settingsGpxSubtitle,
                 onTap: () {
                   Navigator.pop(context);
                   _exportData('gpx');
@@ -169,8 +194,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               _ExportOption(
                 icon: Icons.public,
-                title: 'KML File',
-                subtitle: 'For Google Earth',
+                title: l10n.settingsKmlFile,
+                subtitle: l10n.settingsKmlSubtitle,
                 onTap: () {
                   Navigator.pop(context);
                   _exportData('kml');
@@ -178,8 +203,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               _ExportOption(
                 icon: Icons.table_chart,
-                title: 'CSV Spreadsheet',
-                subtitle: 'For Excel & data analysis',
+                title: l10n.settingsCsvFile,
+                subtitle: l10n.settingsCsvSubtitle,
                 onTap: () {
                   Navigator.pop(context);
                   _exportData('csv');
@@ -194,14 +219,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+
     return Scaffold(
       backgroundColor: AppColors.backgroundDark,
       appBar: AppBar(
         backgroundColor: AppColors.backgroundDark,
         automaticallyImplyLeading: false,
-        title: const Text(
-          'Settings',
-          style: TextStyle(
+        title: Text(
+          l10n.settingsTitle,
+          style: const TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w600,
           ),
@@ -213,12 +240,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ListView(
             padding: const EdgeInsets.symmetric(vertical: 8),
             children: [
+              // Language Section
+              _buildSectionHeader(l10n.settingsLanguage.toUpperCase(), Icons.language),
+              _SettingsDropdownTile(
+                icon: Icons.language,
+                title: l10n.settingsLanguage,
+                options: [l10n.settingsLanguageAuto, 'English', 'Русский', 'Deutsch', 'Bahasa Indonesia', 'Filipino'],
+                value: _getLanguageDisplayName(_settings.appLanguage, l10n),
+                onChanged: (v) {
+                  final langCode = _getLanguageCode(v, l10n);
+                  setState(() => _settings.appLanguage = langCode);
+                  appLocaleNotifier.value = langCode == 'auto' ? null : Locale(langCode);
+                },
+              ),
+
               // Camera Settings Section
-              _buildSectionHeader('CAMERA & OVERLAY', Icons.camera_alt_outlined),
+              _buildSectionHeader(l10n.settingsCameraSection, Icons.camera_alt_outlined),
               _SettingsToggleTile(
                 icon: Icons.grid_on_outlined,
-                title: 'Camera Grid Lines',
-                subtitle: 'Assist with photo composition',
+                title: l10n.settingsGridLines,
+                subtitle: l10n.settingsGridLinesSubtitle,
                 value: _settings.gridLinesEnabled,
                 onChanged: (value) {
                   setState(() => _settings.gridLinesEnabled = value);
@@ -226,71 +267,65 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               _SettingsToggleTile(
                 icon: Icons.branding_watermark_outlined,
-                title: 'GPS Watermark Overlay',
-                subtitle: 'Burn data directly into photo',
+                title: l10n.settingsWatermarkOverlay,
+                subtitle: l10n.settingsWatermarkOverlaySubtitle,
                 value: _settings.showWatermark,
                 onChanged: (value) {
                   setState(() => _settings.showWatermark = value);
                 },
               ),
 
-              // Map Style Section
-              _buildSectionHeader('WATERMARK MAP STYLE', Icons.map_outlined),
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                child: _buildMapTypeCarousel(),
-              ),
-              
+
               // Data Fields Section
-              _buildSectionHeader('DATA FIELDS VISIBILITY', Icons.view_quilt_outlined),
+              _buildSectionHeader(l10n.settingsDataFields, Icons.view_quilt_outlined),
               _SettingsToggleTile(
                 icon: Icons.location_on_outlined,
-                title: 'Full Address',
+                title: l10n.settingsFullAddress,
                 value: _settings.templateShowAddress,
                 onChanged: (v) => setState(() => _settings.templateShowAddress = v),
               ),
               _SettingsToggleTile(
                 icon: Icons.my_location_outlined,
-                title: 'GPS Coordinates',
+                title: l10n.settingsGpsCoordinates,
                 value: _settings.templateShowCoordinates,
                 onChanged: (v) => setState(() => _settings.templateShowCoordinates = v),
               ),
               _SettingsToggleTile(
                 icon: Icons.explore_outlined,
-                title: 'Compass & Heading',
+                title: l10n.settingsCompassHeading,
                 value: _settings.templateShowCompass,
                 onChanged: (v) => setState(() => _settings.templateShowCompass = v),
               ),
               _SettingsToggleTile(
                 icon: Icons.calendar_today_outlined,
-                title: 'Date & Time Stamp',
+                title: l10n.settingsDateTimeStamp,
                 value: _settings.templateShowDateTime,
                 onChanged: (v) => setState(() => _settings.templateShowDateTime = v),
               ),
               
               // Formatting Section
-              _buildSectionHeader('DISPLAY FORMATS', Icons.settings_outlined),
+              _buildSectionHeader(l10n.settingsDisplayFormats, Icons.settings_outlined),
               _SettingsDropdownTile(
                 icon: Icons.calendar_month_outlined,
-                title: 'Date Display',
+                title: l10n.settingsDateDisplay,
                 options: const ['DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY-MM-DD'],
                 value: _settings.templateDateFormat,
                 onChanged: (v) => setState(() => _settings.templateDateFormat = v),
               ),
               _SettingsDropdownTile(
                 icon: Icons.gps_fixed_outlined,
-                title: 'Coordinate Precision',
+                title: l10n.settingsCoordPrecision,
                 options: const ['Decimal Degrees (DD)', 'Degrees Minutes Seconds (DMS)'],
                 value: _settings.templateCoordFormat,
                 onChanged: (v) => setState(() => _settings.templateCoordFormat = v),
               ),
               
               // Measurement Units Section
-              _buildSectionHeader('MEASUREMENT UNITS', Icons.straighten_outlined),
+              _buildSectionHeader(l10n.settingsUnits.toUpperCase(), Icons.straighten_outlined),
               _SettingsSegmentTile(
                 icon: Icons.height_outlined,
-                title: 'Altitude & Distance',
-                options: const ['Metric', 'Imperial'],
+                title: l10n.settingsAltitudeDistance,
+                options: [l10n.settingsMetric, l10n.settingsImperial],
                 selectedIndex: _settings.useMetricUnits ? 0 : 1,
                 onChanged: (index) {
                   setState(() => _settings.useMetricUnits = index == 0);
@@ -298,8 +333,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               _SettingsSegmentTile(
                 icon: Icons.thermostat_outlined,
-                title: 'Temperature',
-                options: const ['°C', '°F'],
+                title: l10n.settingsTemperature,
+                options: [l10n.settingsCelsius, l10n.settingsFahrenheit],
                 selectedIndex: _settings.useCelsius ? 0 : 1,
                 onChanged: (index) {
                   setState(() => _settings.useCelsius = index == 0);
@@ -307,7 +342,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               
               // Storage Section
-              _buildSectionHeader('STORAGE & DATA', Icons.storage_outlined),
+              _buildSectionHeader(l10n.settingsStorageSection, Icons.storage_outlined),
               _StorageTile(
                 photoCount: _photoCount,
                 usedGB: _usedGB,
@@ -316,26 +351,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               _SettingsTile(
                 icon: Icons.file_download_outlined,
-                title: 'Export GPS Data',
-                subtitle: 'GPX, KML, or CSV format',
+                title: l10n.settingsExportGpsData,
+                subtitle: l10n.settingsExportGpsSubtitle,
                 trailing: const Icon(Icons.chevron_right, color: AppColors.primary),
                 iconColor: AppColors.primary,
                 onTap: _photoCount > 0 ? _showExportOptions : null,
               ),
               _SettingsTile(
                 icon: Icons.delete_sweep_outlined,
-                title: 'Clear All Photos',
-                subtitle: 'Safe permanent deletion',
+                title: l10n.settingsClearPhotos,
+                subtitle: l10n.settingsClearPhotosSubtitle,
                 trailing: const Icon(Icons.chevron_right, color: Colors.red),
                 iconColor: Colors.red,
                 onTap: _photoCount > 0 ? _clearAllPhotos : null,
               ),
               
               // Legal Section
-              _buildSectionHeader('LEGAL & PRIVACY', Icons.gavel_outlined),
+              _buildSectionHeader(l10n.settingsLegalSection, Icons.gavel_outlined),
               _SettingsTile(
                 icon: Icons.description_outlined,
-                title: 'Terms & Conditions',
+                title: l10n.settingsTerms,
                 trailing: const Icon(Icons.chevron_right, color: AppColors.textMuted),
                 onTap: () {
                   Navigator.push(
@@ -351,7 +386,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               _SettingsTile(
                 icon: Icons.privacy_tip_outlined,
-                title: 'Privacy Policy',
+                title: l10n.settingsPrivacy,
                 trailing: const Icon(Icons.chevron_right, color: AppColors.textMuted),
                 onTap: () {
                   Navigator.push(
@@ -367,22 +402,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
 
               // About Section
-              _buildSectionHeader('SYSTEM PERMISSIONS', Icons.security_outlined),
+              _buildSectionHeader(l10n.settingsPermissionsSection, Icons.security_outlined),
               _SettingsTile(
                 icon: Icons.settings_applications_outlined,
-                title: 'Manage Permissions',
-                subtitle: 'Open system settings',
+                title: l10n.settingsManagePermissions,
+                subtitle: l10n.settingsManagePermissionsSubtitle,
                 trailing: const Icon(Icons.open_in_new_outlined, size: 18, color: AppColors.textMuted),
                 onTap: () async {
                   await Geolocator.openAppSettings();
                 },
               ),
 
-              _buildSectionHeader('ABOUT GEOCAM PRO', Icons.info_outline),
+              _buildSectionHeader(l10n.settingsAboutSection, Icons.info_outline),
               _SettingsTile(
                 icon: Icons.diamond_outlined,
-                title: 'Upgrade to Premium',
-                subtitle: 'Unlock tactical map styles',
+                title: l10n.settingsUpgradePremium,
+                subtitle: l10n.settingsUpgradePremiumSubtitle,
                 iconColor: Colors.amber,
                 onTap: () {
                   Navigator.push(context, MaterialPageRoute(builder: (context) => const PremiumScreen()));
@@ -390,7 +425,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               _SettingsTile(
                 icon: Icons.verified_user_outlined,
-                title: 'App Version',
+                title: l10n.settingsAppVersion,
                 subtitle: '1.0.0 PRO',
               ),
               
@@ -398,18 +433,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
           // Loading overlay
-          if (_isExporting)
+              if (_isExporting)
             Container(
               color: Colors.black54,
-              child: const Center(
+              child: Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    CircularProgressIndicator(color: AppColors.primary),
-                    SizedBox(height: 16),
+                    const CircularProgressIndicator(color: AppColors.primary),
+                    const SizedBox(height: 16),
                     Text(
-                      'Exporting...',
-                      style: TextStyle(color: Colors.white),
+                      AppLocalizations.of(context)!.settingsExporting,
+                      style: const TextStyle(color: Colors.white),
                     ),
                   ],
                 ),

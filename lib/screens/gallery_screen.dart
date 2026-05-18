@@ -9,6 +9,7 @@ import '../services/database_service.dart';
 import '../services/ad_service.dart';
 import '../services/settings_service.dart';
 import '../widgets/photo_grid_tile.dart';
+import 'package:geocam_flutter/l10n/app_localizations.dart';
 import 'photo_detail_screen.dart';
 
 class GalleryScreen extends StatefulWidget {
@@ -118,20 +119,20 @@ class _GalleryScreenState extends State<GalleryScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const Column(
+          Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'My Gallery',
-                style: TextStyle(
+                AppLocalizations.of(context)!.galleryTitle,
+                style: const TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.bold,
                   color: Colors.white,
                 ),
               ),
               Text(
-                'Captured with GPS',
-                style: TextStyle(
+                AppLocalizations.of(context)!.galleryCapturedWith,
+                style: const TextStyle(
                   fontSize: 14,
                   color: AppColors.textMuted,
                 ),
@@ -154,19 +155,19 @@ class _GalleryScreenState extends State<GalleryScreen> {
         children: [
           Icon(Icons.photo_library_outlined, size: 80, color: Colors.grey[800]),
           const SizedBox(height: 24),
-          const Text(
-            'No photos captured yet',
-            style: TextStyle(
+          Text(
+            AppLocalizations.of(context)!.galleryEmpty,
+            style: const TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w600,
               color: AppColors.textMuted,
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
-            'Take some photos with the camera\nto see them here.',
+          Text(
+            AppLocalizations.of(context)!.galleryEmptyHint,
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey, fontSize: 14),
+            style: const TextStyle(color: Colors.grey, fontSize: 14),
           ),
         ],
       ),

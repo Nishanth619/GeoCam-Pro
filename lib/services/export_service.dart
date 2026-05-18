@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'database_service.dart';
+import '../models/photo_model.dart';
 
 /// Service to export photos with GPS data in various formats
 class ExportService {
@@ -19,32 +20,8 @@ class ExportService {
       final photos = await _databaseService.getAllPhotos();
       if (photos.isEmpty) return null;
 
-      final buffer = StringBuffer();
-      buffer.writeln('<?xml version="1.0" encoding="UTF-8"?>');
-      buffer.writeln('<gpx version="1.1" creator="GeoCam"');
-      buffer.writeln('  xmlns="http://www.topografix.com/GPX/1/1"');
-      buffer.writeln('  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"');
-      buffer.writeln('  xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">');
-      buffer.writeln('  <metadata>');
-      buffer.writeln('    <name>GeoCam Photo Export</name>');
-      buffer.writeln('    <time>${DateTime.now().toUtc().toIso8601String()}</time>');
-      buffer.writeln('  </metadata>');
-
-      for (final photo in photos) {
-        final time = photo.capturedAt.toUtc().toIso8601String();
-        buffer.writeln('  <wpt lat="${photo.latitude}" lon="${photo.longitude}">');
-        if (photo.altitude != null) {
-          buffer.writeln('    <ele>${photo.altitude}</ele>');
-        }
-        buffer.writeln('    <time>$time</time>');
-        buffer.writeln('    <name>Photo ${photo.id}</name>');
-        if (photo.address != null) {
-          buffer.writeln('    <desc>${_escapeXml(photo.address!)}</desc>');
-        }
-        buffer.writeln('  </wpt>');
-      }
-
-      buffer.writeln('</gpx>');
+      // Build the XML string in a background isolate (can be slow for large libraries)
+      final content = await compute(_buildGpxString, photos);
 
       // Save to file
       final directory = await getApplicationDocumentsDirectory();
@@ -53,8 +30,7 @@ class ExportService {
 
       final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
       final filePath = path.join(exportDir, 'geocam_$timestamp.gpx');
-      final file = File(filePath);
-      await file.writeAsString(buffer.toString());
+      await File(filePath).writeAsString(content);
 
       debugPrint('GPX exported to: $filePath');
       return filePath;
@@ -70,53 +46,15 @@ class ExportService {
       final photos = await _databaseService.getAllPhotos();
       if (photos.isEmpty) return null;
 
-      final buffer = StringBuffer();
-      buffer.writeln('<?xml version="1.0" encoding="UTF-8"?>');
-      buffer.writeln('<kml xmlns="http://www.opengis.net/kml/2.2">');
-      buffer.writeln('  <Document>');
-      buffer.writeln('    <name>GeoCam Photo Export</name>');
-      buffer.writeln('    <description>Photos captured with GeoCam</description>');
+      final content = await compute(_buildKmlString, photos);
 
-      // Add style for photo markers
-      buffer.writeln('    <Style id="photoStyle">');
-      buffer.writeln('      <IconStyle>');
-      buffer.writeln('        <Icon><href>http://maps.google.com/mapfiles/kml/shapes/camera.png</href></Icon>');
-      buffer.writeln('      </IconStyle>');
-      buffer.writeln('    </Style>');
-
-      for (final photo in photos) {
-        buffer.writeln('    <Placemark>');
-        buffer.writeln('      <name>Photo ${photo.id}</name>');
-        if (photo.address != null) {
-          buffer.writeln('      <description>${_escapeXml(photo.address!)}</description>');
-        }
-        buffer.writeln('      <styleUrl>#photoStyle</styleUrl>');
-        buffer.writeln('      <TimeStamp>');
-        buffer.writeln('        <when>${photo.capturedAt.toUtc().toIso8601String()}</when>');
-        buffer.writeln('      </TimeStamp>');
-        buffer.writeln('      <Point>');
-        if (photo.altitude != null) {
-          buffer.writeln('        <altitudeMode>absolute</altitudeMode>');
-          buffer.writeln('        <coordinates>${photo.longitude},${photo.latitude},${photo.altitude}</coordinates>');
-        } else {
-          buffer.writeln('        <coordinates>${photo.longitude},${photo.latitude},0</coordinates>');
-        }
-        buffer.writeln('      </Point>');
-        buffer.writeln('    </Placemark>');
-      }
-
-      buffer.writeln('  </Document>');
-      buffer.writeln('</kml>');
-
-      // Save to file
       final directory = await getApplicationDocumentsDirectory();
       final exportDir = path.join(directory.path, 'GeoCam', 'Exports');
       await Directory(exportDir).create(recursive: true);
 
       final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
       final filePath = path.join(exportDir, 'geocam_$timestamp.kml');
-      final file = File(filePath);
-      await file.writeAsString(buffer.toString());
+      await File(filePath).writeAsString(content);
 
       debugPrint('KML exported to: $filePath');
       return filePath;
@@ -132,37 +70,15 @@ class ExportService {
       final photos = await _databaseService.getAllPhotos();
       if (photos.isEmpty) return null;
 
-      final buffer = StringBuffer();
-      // CSV header
-      buffer.writeln('ID,Date,Time,Latitude,Longitude,Altitude,Address,Temperature,Weather,Image Path');
+      final content = await compute(_buildCsvString, photos);
 
-      final dateFormat = DateFormat('yyyy-MM-dd');
-      final timeFormat = DateFormat('HH:mm:ss');
-
-      for (final photo in photos) {
-        buffer.writeln([
-          photo.id ?? '',
-          dateFormat.format(photo.capturedAt),
-          timeFormat.format(photo.capturedAt),
-          photo.latitude,
-          photo.longitude,
-          photo.altitude?.toStringAsFixed(1) ?? '',
-          '"${photo.address?.replaceAll('"', '""') ?? ''}"',
-          photo.temperature?.toStringAsFixed(1) ?? '',
-          photo.weatherCondition ?? '',
-          '"${photo.imagePath.replaceAll('"', '""')}"',
-        ].join(','));
-      }
-
-      // Save to file
       final directory = await getApplicationDocumentsDirectory();
       final exportDir = path.join(directory.path, 'GeoCam', 'Exports');
       await Directory(exportDir).create(recursive: true);
 
       final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
       final filePath = path.join(exportDir, 'geocam_$timestamp.csv');
-      final file = File(filePath);
-      await file.writeAsString(buffer.toString());
+      await File(filePath).writeAsString(content);
 
       debugPrint('CSV exported to: $filePath');
       return filePath;
@@ -203,4 +119,90 @@ class ExportService {
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&apos;');
   }
+}
+
+// ─── Top-level isolate entrypoints (must be top-level or static) ────────────
+
+String _buildGpxString(List<Photo> photos) {
+  final buffer = StringBuffer();
+  buffer.writeln('<?xml version="1.0" encoding="UTF-8"?>');
+  buffer.writeln('<gpx version="1.1" creator="GeoCam"');
+  buffer.writeln('  xmlns="http://www.topografix.com/GPX/1/1"');
+  buffer.writeln('  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"');
+  buffer.writeln('  xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">');
+  buffer.writeln('  <metadata>');
+  buffer.writeln('    <name>GeoCam Photo Export</name>');
+  buffer.writeln('    <time>${DateTime.now().toUtc().toIso8601String()}</time>');
+  buffer.writeln('  </metadata>');
+  for (final photo in photos) {
+    final time = photo.capturedAt.toUtc().toIso8601String();
+    buffer.writeln('  <wpt lat="${photo.latitude}" lon="${photo.longitude}">');
+    if (photo.altitude != null) buffer.writeln('    <ele>${photo.altitude}</ele>');
+    buffer.writeln('    <time>$time</time>');
+    buffer.writeln('    <name>Photo ${photo.id}</name>');
+    if (photo.address != null) buffer.writeln('    <desc>${_escapeXmlIsolate(photo.address!)}</desc>');
+    buffer.writeln('  </wpt>');
+  }
+  buffer.writeln('</gpx>');
+  return buffer.toString();
+}
+
+String _buildKmlString(List<Photo> photos) {
+  final buffer = StringBuffer();
+  buffer.writeln('<?xml version="1.0" encoding="UTF-8"?>');
+  buffer.writeln('<kml xmlns="http://www.opengis.net/kml/2.2">');
+  buffer.writeln('  <Document>');
+  buffer.writeln('    <name>GeoCam Photo Export</name>');
+  buffer.writeln('    <description>Photos captured with GeoCam</description>');
+  buffer.writeln('    <Style id="photoStyle"><IconStyle><Icon><href>http://maps.google.com/mapfiles/kml/shapes/camera.png</href></Icon></IconStyle></Style>');
+  for (final photo in photos) {
+    buffer.writeln('    <Placemark>');
+    buffer.writeln('      <name>Photo ${photo.id}</name>');
+    if (photo.address != null) buffer.writeln('      <description>${_escapeXmlIsolate(photo.address!)}</description>');
+    buffer.writeln('      <styleUrl>#photoStyle</styleUrl>');
+    buffer.writeln('      <TimeStamp><when>${photo.capturedAt.toUtc().toIso8601String()}</when></TimeStamp>');
+    buffer.writeln('      <Point>');
+    if (photo.altitude != null) {
+      buffer.writeln('        <altitudeMode>absolute</altitudeMode>');
+      buffer.writeln('        <coordinates>${photo.longitude},${photo.latitude},${photo.altitude}</coordinates>');
+    } else {
+      buffer.writeln('        <coordinates>${photo.longitude},${photo.latitude},0</coordinates>');
+    }
+    buffer.writeln('      </Point>');
+    buffer.writeln('    </Placemark>');
+  }
+  buffer.writeln('  </Document>');
+  buffer.writeln('</kml>');
+  return buffer.toString();
+}
+
+String _buildCsvString(List<Photo> photos) {
+  final buffer = StringBuffer();
+  buffer.writeln('ID,Date,Time,Latitude,Longitude,Altitude,Address,Temperature,Weather,Image Path');
+  final dateFormat = DateFormat('yyyy-MM-dd');
+  final timeFormat = DateFormat('HH:mm:ss');
+  for (final photo in photos) {
+    buffer.writeln([
+      photo.id ?? '',
+      dateFormat.format(photo.capturedAt),
+      timeFormat.format(photo.capturedAt),
+      photo.latitude,
+      photo.longitude,
+      photo.altitude?.toStringAsFixed(1) ?? '',
+      '"${photo.address?.replaceAll('"', '""') ?? ''}"',
+      photo.temperature?.toStringAsFixed(1) ?? '',
+      photo.weatherCondition ?? '',
+      '"${photo.imagePath.replaceAll('"', '""')}"',
+    ].join(','));
+  }
+  return buffer.toString();
+}
+
+String _escapeXmlIsolate(String text) {
+  return text
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&apos;');
 }

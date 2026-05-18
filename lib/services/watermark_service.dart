@@ -1,16 +1,15 @@
 import 'dart:io';
 import 'package:flutter/services.dart';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import '../models/photo_model.dart';
+import 'settings_service.dart';
 
 /// Service to create watermarked versions of photos with GPS data overlay
 class WatermarkService {
@@ -31,16 +30,49 @@ class WatermarkService {
     int mapType = 1,
     double opacity = 0.9,
     bool saveToGallery = false, // If true, saves to Pictures/GEOCAM PRO. If false, saves to temp.
+    double rotationTurns = 0.0, // Used to rotate the image physically into landscape
   }) async {
     try {
       final File originalFile = File(photo.imagePath);
       if (!await originalFile.exists()) return null;
 
       final Uint8List imageBytes = await originalFile.readAsBytes();
+
+      // ────────────────────────────────────────────────────────────────────────
+      // ORIENTATION DETECTION — Sensor-only (simple and reliable)
+      // ────────────────────────────────────────────────────────────────────────
+      // The accelerometer sensor value was snapshotted at the EXACT moment the
+      // shutter was pressed. This is the single source of truth.
+      //
+      // EXIF and bakeOrientation are unreliable:
+      //   - Realme writes EXIF Orientation=0 (non-standard, does nothing)
+      //   - bakeOrientation has no effect when Orientation=0
+      //   - Both add ~200ms of unnecessary processing
+      //
+      // Sensor values: 0.0 = portrait, -0.25 or 0.25 = landscape
+      // ────────────────────────────────────────────────────────────────────────
+
+      final bool isLandscape = (rotationTurns == -0.25 || rotationTurns == 0.25);
+      debugPrint('🖼️ ORIENTATION: rotationTurns=$rotationTurns → isLandscape=$isLandscape');
+
+      // ── BUILD THE CANVAS ──
+      // Use Flutter codec for the canvas image (it's fast for drawing),
+      // but compute correct dimensions based on our orientation detection.
       final ui.Codec codec = await ui.instantiateImageCodec(imageBytes);
       final ui.Image originalImage = (await codec.getNextFrame()).image;
 
-      // ... (Map logic unchanged) ...
+      final double rawW = originalImage.width.toDouble();
+      final double rawH = originalImage.height.toDouble();
+
+      // If landscape detected but raw image is portrait pixels → swap dimensions
+      // and rotate the canvas
+      final bool needsRotation = isLandscape && rawW < rawH;
+      final double canvasWidth  = needsRotation ? rawH : rawW;
+      final double canvasHeight = needsRotation ? rawW : rawH;
+
+      debugPrint('🖼️ WatermarkService: needsRotation=$needsRotation '
+          'canvas=${canvasWidth.toInt()}x${canvasHeight.toInt()} '
+          'raw=${rawW.toInt()}x${rawH.toInt()}');
 
       _MapResult? mapResult;
       if (showMiniMap) {
@@ -50,12 +82,27 @@ class WatermarkService {
       final ui.PictureRecorder recorder = ui.PictureRecorder();
       final Canvas canvas = Canvas(recorder);
 
+      // Draw image with rotation if needed
+      canvas.save();
+      if (needsRotation) {
+        // Determine rotation direction from sensor
+        if (rotationTurns == 0.25) {
+          // 90° CW (phone tilted right)
+          canvas.translate(canvasWidth, 0);
+          canvas.rotate(math.pi / 2);
+        } else {
+          // 90° CCW (phone tilted left, default landscape)
+          canvas.translate(0, canvasHeight);
+          canvas.rotate(-math.pi / 2);
+        }
+      }
       canvas.drawImage(originalImage, Offset.zero, Paint());
+      canvas.restore();
 
       await _drawWatermarkOverlay(
         canvas,
-        originalImage.width.toDouble(),
-        originalImage.height.toDouble(),
+        canvasWidth,
+        canvasHeight,
         photo,
         mapResult: mapResult,
         showAddress: showAddress,
@@ -64,11 +111,12 @@ class WatermarkService {
         showTemperature: showTemperature,
         showDate: showDate,
         opacity: opacity,
+        isLandscape: isLandscape,
       );
 
       final ui.Image watermarkedImage = await recorder.endRecording().toImage(
-        originalImage.width,
-        originalImage.height,
+        canvasWidth.toInt(),
+        canvasHeight.toInt(),
       );
 
       // Dispose original image immediately to free memory
@@ -139,12 +187,14 @@ class WatermarkService {
 
       final List<ui.Image?> tiles = await Future.wait(tileFutures);
       
-      // Filter out failures
-      if (tiles.any((t) => t == null)) return null;
-
+      // We do not fail the entire map if a tile fails. We just skip drawing it.
+      
       // Stitch tiles (3x3 grid of 256x256 = 768x768)
       final ui.PictureRecorder recorder = ui.PictureRecorder();
       final Canvas canvas = Canvas(recorder);
+
+      // Draw a default background in case some tiles are missing
+      canvas.drawRect(const Rect.fromLTWH(0, 0, 768, 768), Paint()..color = const Color(0xFFE0E0E0));
 
       for (int i = 0; i < tiles.length; i++) {
         if (tiles[i] == null) continue;
@@ -211,15 +261,22 @@ class WatermarkService {
     required bool showTemperature,
     required bool showDate,
     required double opacity,
+    bool isLandscape = false,
   }) async {
-    final double scale = width / 1080;
-    final double padding = 40 * scale;
-    
-    final double cardWidth = width - padding * 2;
-    final double cardHeight = 320 * scale;
-    final double cardX = padding;
+    // In portrait, scale off the width (the short edge of a tall image).
+    // In landscape, scale off the height (the short edge of a wide image).
+    final double refEdge = isLandscape ? height : width;
+    final double scale = refEdge / 1080;
+    final double padding = 32 * scale;
+
+    // Card sizing adapts to orientation
+    final double cardWidth = isLandscape
+        ? width * 0.60   // Landscape: compact 60% width card
+        : width - padding * 2;  // Portrait: full width minus padding
+    final double cardHeight = isLandscape ? 190 * scale : 320 * scale;
+    final double cardX = (width - cardWidth) / 2; // Center horizontally
     final double cardY = height - cardHeight - padding;
-    final double cornerRadius = 30 * scale;
+    final double cornerRadius = 24 * scale;
 
     // Draw Card Background
     canvas.drawRRect(
@@ -228,10 +285,10 @@ class WatermarkService {
     );
 
     // 1. Precise Mini Map (On the Right)
-    final double mapSize = cardHeight - 24 * scale;
-    final double mapX = cardX + cardWidth - mapSize - 12 * scale;
-    final double mapY = cardY + 12 * scale;
-    final RRect mapBox = RRect.fromRectAndRadius(Rect.fromLTWH(mapX, mapY, mapSize, mapSize), Radius.circular(cornerRadius - 8 * scale));
+    final double mapSize = cardHeight - 20 * scale;
+    final double mapX = cardX + cardWidth - mapSize - 10 * scale;
+    final double mapY = cardY + 10 * scale;
+    final RRect mapBox = RRect.fromRectAndRadius(Rect.fromLTWH(mapX, mapY, mapSize, mapSize), Radius.circular(cornerRadius - 6 * scale));
 
     if (mapResult != null) {
       canvas.save();
@@ -267,82 +324,89 @@ class WatermarkService {
       );
       canvas.drawRRect(
         mapBox.shift(Offset(0.5 * scale, 0.5 * scale)), 
-        Paint()..color = const Color(0xFF13ec80).withValues(alpha: 0.1)..style = PaintingStyle.stroke..strokeWidth = 0.5 * scale
+        Paint()..color = const Color(0xFF38BDF8).withValues(alpha: 0.1)..style = PaintingStyle.stroke..strokeWidth = 0.5 * scale
       );
-    } else {
-      canvas.drawRRect(mapBox, Paint()..color = Colors.white10);
-      _drawText(canvas, '🛰️ LOADING...', mapX + 30 * scale, mapY + mapSize / 2.5, mapSize, 28 * scale, Colors.white24, fontWeight: FontWeight.bold);
+
+      // Tactical Crosshair Pin (only when map is visible)
+      final double pinX = mapX + mapSize / 2;
+      final double pinY = mapY + mapSize / 2;
+      final Paint crosshairPaint = Paint()
+        ..color = const Color(0xFF38BDF8)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5 * scale;
+
+      // Outer glow for the crosshair
+      canvas.drawCircle(Offset(pinX, pinY), 15 * scale, Paint()..color = const Color(0xFF38BDF8).withValues(alpha: 0.15)..style = PaintingStyle.stroke..strokeWidth = 4 * scale);
+      
+      // Crosshair Lines
+      const double lineStart = 10.0;
+      const double lineLength = 12.0;
+      canvas.drawLine(Offset(pinX, pinY - (lineStart * scale)), Offset(pinX, pinY - ((lineStart + lineLength) * scale)), crosshairPaint);
+      canvas.drawLine(Offset(pinX, pinY + (lineStart * scale)), Offset(pinX, pinY + ((lineStart + lineLength) * scale)), crosshairPaint);
+      canvas.drawLine(Offset(pinX - (lineStart * scale), pinY), Offset(pinX - ((lineStart + lineLength) * scale), pinY), crosshairPaint);
+      canvas.drawLine(Offset(pinX + (lineStart * scale), pinY), Offset(pinX + ((lineStart + lineLength) * scale), pinY), crosshairPaint);
+
+      // Center glowing dot
+      canvas.drawCircle(Offset(pinX, pinY), 5 * scale, Paint()..color = const Color(0xFF38BDF8));
+      canvas.drawCircle(Offset(pinX, pinY), 8 * scale, Paint()..color = const Color(0xFF38BDF8).withValues(alpha: 0.3));
     }
-    
-    // Tactical Crosshair Pin
-    final double pinX = mapX + mapSize / 2;
-    final double pinY = mapY + mapSize / 2;
-    final Paint crosshairPaint = Paint()
-      ..color = const Color(0xFF13ec80)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5 * scale;
 
-    // Outer glow for the crosshair
-    canvas.drawCircle(Offset(pinX, pinY), 15 * scale, Paint()..color = const Color(0xFF13ec80).withValues(alpha: 0.15)..style = PaintingStyle.stroke..strokeWidth = 4 * scale);
-    
-    // Crosshair Lines
-    const double lineStart = 10.0;
-    const double lineLength = 12.0;
-    
-    // Top
-    canvas.drawLine(Offset(pinX, pinY - (lineStart * scale)), Offset(pinX, pinY - ((lineStart + lineLength) * scale)), crosshairPaint);
-    // Bottom
-    canvas.drawLine(Offset(pinX, pinY + (lineStart * scale)), Offset(pinX, pinY + ((lineStart + lineLength) * scale)), crosshairPaint);
-    // Left
-    canvas.drawLine(Offset(pinX - (lineStart * scale), pinY), Offset(pinX - ((lineStart + lineLength) * scale), pinY), crosshairPaint);
-    // Right
-    canvas.drawLine(Offset(pinX + (lineStart * scale), pinY), Offset(pinX + ((lineStart + lineLength) * scale), pinY), crosshairPaint);
+    // 2. Text Content
+    // When map was loaded, text is on the left. When no map, text spans full width.
+    final double textX = cardX + 28 * scale;
+    double textY = cardY + 24 * scale;
+    final double maxTextWidth = mapResult != null
+        ? cardWidth - mapSize - 60 * scale   // leave room for map
+        : cardWidth - 56 * scale;            // full card width
 
-    // Center glowing dot
-    canvas.drawCircle(Offset(pinX, pinY), 5 * scale, Paint()..color = const Color(0xFF13ec80));
-    canvas.drawCircle(Offset(pinX, pinY), 8 * scale, Paint()..color = const Color(0xFF13ec80).withValues(alpha: 0.3));
-
-    // 2. Text Content (On the Left)
-    final double textX = cardX + 35 * scale;
-    double textY = cardY + 35 * scale;
-    final double maxTextWidth = cardWidth - mapSize - 70 * scale;
+    // Scale text sizes based on orientation
+    final double titleSize = isLandscape ? 34 * scale : 44 * scale;
+    final double bodySize = isLandscape ? 20 * scale : 26 * scale;
+    final double metaSize = isLandscape ? 18 * scale : 24 * scale;
+    final double brandSize = isLandscape ? 16 * scale : 20 * scale;
+    final double lineGap = isLandscape ? 28 * scale : 34 * scale;
 
     // A. Title
     String title = "LOCATION DETAILS";
     if (photo.address != null) {
       final p = photo.address!.split(',');
-      if (p.length >= 3) title = "${p[p.length-3].trim()}, ${p[p.length-2].trim()}, ${p[p.length-1].trim()}";
-      else title = photo.address!;
+      if (p.length >= 3) {
+        title = "${p[p.length-3].trim()}, ${p[p.length-2].trim()}, ${p[p.length-1].trim()}";
+      } else {
+        title = photo.address!;
+      }
     }
-    if (title.toUpperCase().contains("INDIA")) title += " 🇮🇳";
+    if (title.toUpperCase().contains("INDIA")) { title += " 🇮🇳"; }
 
-    _drawText(canvas, title, textX, textY, maxTextWidth, 44 * scale, Colors.white, fontWeight: FontWeight.bold);
-    textY += 60 * scale;
+    _drawText(canvas, title, textX, textY, maxTextWidth, titleSize, Colors.white, fontWeight: FontWeight.bold);
+    textY += isLandscape ? 42 * scale : 60 * scale;
 
     // B. Address
     if (showAddress && photo.address != null) {
-      final lines = _splitTextIntoLines(photo.address!, maxTextWidth, 26 * scale);
-      for (final line in lines.take(2)) {
-        _drawText(canvas, line, textX, textY, maxTextWidth, 26 * scale, Colors.white.withValues(alpha: 0.85 * opacity));
-        textY += 34 * scale;
+      final lines = _splitTextIntoLines(photo.address!, maxTextWidth, bodySize);
+      for (final line in lines.take(isLandscape ? 1 : 2)) {
+        _drawText(canvas, line, textX, textY, maxTextWidth, bodySize, Colors.white.withValues(alpha: 0.85 * opacity));
+        textY += lineGap;
       }
     }
-    textY += 15 * scale;
+    textY += isLandscape ? 6 * scale : 15 * scale;
 
     // C. Meta Row
     String meta = "Lat ${photo.latitude.toStringAsFixed(6)}°, Long ${photo.longitude.toStringAsFixed(6)}°";
     if (showAltitude) meta += " | Elev: ${photo.altitude?.toInt() ?? 0}m";
-    _drawText(canvas, meta, textX, textY, maxTextWidth, 24 * scale, Colors.white70, fontWeight: FontWeight.w500);
-    textY += 38 * scale;
+    _drawText(canvas, meta, textX, textY, maxTextWidth, metaSize, Colors.white70, fontWeight: FontWeight.w500);
+    textY += isLandscape ? 24 * scale : 38 * scale;
 
     // D. DateTime
     if (showDate) {
-      final dateStr = DateFormat('EEEE, dd/MM/yyyy • hh:mm a').format(photo.capturedAt);
-      _drawText(canvas, dateStr, textX, textY, maxTextWidth, 24 * scale, Colors.white70);
+      final appLang = SettingsService().appLanguage;
+      final localeCode = appLang == 'auto' ? null : (appLang == 'tl' ? 'en' : appLang);
+      final dateStr = DateFormat('EEEE, dd/MM/yyyy • hh:mm a', localeCode).format(photo.capturedAt);
+      _drawText(canvas, dateStr, textX, textY, maxTextWidth, metaSize, Colors.white70);
     }
 
     // E. Footer Branding
-    _drawText(canvas, "📍 GEOCAM PRO", textX, cardY + cardHeight - 40 * scale, maxTextWidth, 20 * scale, const Color(0xFF13ec80).withValues(alpha: 0.8), fontWeight: FontWeight.bold);
+    _drawText(canvas, "📍 GEOCAM PRO", textX, cardY + cardHeight - 30 * scale, maxTextWidth, brandSize, const Color(0xFF38BDF8).withValues(alpha: 0.8), fontWeight: FontWeight.bold);
   }
 
   List<String> _splitTextIntoLines(String text, double maxTextWidth, double fontSize) {
@@ -352,10 +416,10 @@ class WatermarkService {
     final List<String> words = text.split(' ');
     String currentLine = "";
     for (var word in words) {
-      if ((currentLine + " " + word).length <= charsPerLine) {
+      if ("$currentLine $word".length <= charsPerLine) {
         currentLine = currentLine.isEmpty ? word : "$currentLine $word";
       } else {
-        if (currentLine.isNotEmpty) result.add(currentLine);
+        if (currentLine.isNotEmpty) { result.add(currentLine); }
         currentLine = word;
       }
     }

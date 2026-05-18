@@ -1,0 +1,34 @@
+﻿  ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+     FLUTTER LAUNCHER ICONS (v0.13.1)                               
+  ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  
+ΓÇó Creating default icons Android
+ΓÇó Overwriting the default Android launcher icon with a new icon
+ΓÇó Creating adaptive icons Android
+ΓÇó Updating colors.xml with color for adaptive icon background
+ΓÇó Overwriting default iOS launcher icon with new icon
+Creating Icons for Web...
+dart : 
+ΓÜá∩╕ÅRequirements 
+failed for platform 
+Web. Skipped
+At line:1 char:1
++ dart run 
+flutter_launcher_icons 
+2>&1 | Out-File 
+-Encoding utf8 icons_ 
+...
++ ~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~
+    + CategoryInfo     
+         : NotSpecifi  
+  ed: (ΓÜá∩╕ÅRequire   
+ me...rm Web. Skipp    
+ed:String) [], Rem    
+oteException
+    + FullyQualifiedEr 
+   rorId : NativeComm  
+  andError
+ 
+
+Γ£ô Successfully generated launcher icons

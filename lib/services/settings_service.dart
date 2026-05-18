@@ -18,6 +18,7 @@ class SettingsService {
   static const String _keyImageResolution = 'image_resolution';
   static const String _keyHasSeenOnboarding = 'has_seen_onboarding';
   static const String _keyHasAcceptedTerms = 'has_accepted_terms';
+  static const String _keyAppLanguage = 'app_language';
   
   // Watermark settings
   static const String _keyWatermarkLogo = 'watermark_logo';
@@ -54,6 +55,9 @@ class SettingsService {
 
   bool get hasAcceptedTerms => _prefs?.getBool(_keyHasAcceptedTerms) ?? false;
   set hasAcceptedTerms(bool value) => _prefs?.setBool(_keyHasAcceptedTerms, value);
+
+  String get appLanguage => _prefs?.getString(_keyAppLanguage) ?? 'auto';
+  set appLanguage(String value) => _prefs?.setString(_keyAppLanguage, value);
 
   // ============= Unit Settings =============
   
