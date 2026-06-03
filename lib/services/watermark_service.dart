@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'dart:ui' as ui;
 import 'dart:math' as math;
@@ -10,6 +11,25 @@ import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import '../models/photo_model.dart';
 import 'settings_service.dart';
+import 'package:image/image.dart' as img;
+
+Uint8List? _encodeJpgTask(Map<String, dynamic> data) {
+  try {
+    final pixels = data['pixels'] as Uint8List;
+    final width = data['width'] as int;
+    final height = data['height'] as int;
+
+    final image = img.Image.fromBytes(
+      width: width,
+      height: height,
+      bytes: pixels.buffer,
+      numChannels: 4,
+    );
+    return img.encodeJpg(image, quality: 90);
+  } catch (e) {
+    return null;
+  }
+}
 
 /// Service to create watermarked versions of photos with GPS data overlay
 class WatermarkService {
@@ -123,20 +143,26 @@ class WatermarkService {
       originalImage.dispose();
       mapResult?.image.dispose();
 
-      final ByteData? byteData = await watermarkedImage.toByteData(format: ui.ImageByteFormat.png);
+      final ByteData? byteData = await watermarkedImage.toByteData(format: ui.ImageByteFormat.rawRgba);
       if (byteData == null) return null;
+
+      final Uint8List? jpgBytes = await compute(_encodeJpgTask, {
+        'pixels': byteData.buffer.asUint8List(),
+        'width': canvasWidth.toInt(),
+        'height': canvasHeight.toInt(),
+      });
+      if (jpgBytes == null) return null;
 
       String exportPath;
       
       if (saveToGallery) {
         // Save to Public Gallery
-        // Save to Public Gallery
         final String publicDir = await _getPicturesDirectory() ?? await _getFallbackPicturesDirectory();
 
         final String exportDir = path.join(publicDir, 'GEOCAM PRO');
         await Directory(exportDir).create(recursive: true);
-        exportPath = path.join(exportDir, 'WM_${DateTime.now().millisecondsSinceEpoch}.png');
-        await File(exportPath).writeAsBytes(byteData.buffer.asUint8List());
+        exportPath = path.join(exportDir, 'WM_${DateTime.now().millisecondsSinceEpoch}.jpg');
+        await File(exportPath).writeAsBytes(jpgBytes);
 
         // Scan file
         try {
@@ -150,8 +176,8 @@ class WatermarkService {
         final Directory tempDir = await getTemporaryDirectory();
         final String exportDir = path.join(tempDir.path, 'watermark_temp');
         await Directory(exportDir).create(recursive: true);
-        exportPath = path.join(exportDir, 'WM_${DateTime.now().millisecondsSinceEpoch}.png');
-        await File(exportPath).writeAsBytes(byteData.buffer.asUint8List());
+        exportPath = path.join(exportDir, 'WM_${DateTime.now().millisecondsSinceEpoch}.jpg');
+        await File(exportPath).writeAsBytes(jpgBytes);
       }
 
       // Final cleanup

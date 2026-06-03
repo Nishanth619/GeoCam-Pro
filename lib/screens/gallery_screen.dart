@@ -9,6 +9,7 @@ import '../services/database_service.dart';
 import '../services/ad_service.dart';
 import '../services/settings_service.dart';
 import '../widgets/photo_grid_tile.dart';
+import '../widgets/soft_paywall_banner.dart';
 import 'package:geocam_flutter/l10n/app_localizations.dart';
 import 'photo_detail_screen.dart';
 
@@ -28,16 +29,11 @@ class _GalleryScreenState extends State<GalleryScreen> {
   Map<String, List<Photo>> _groupedPhotos = {};
   StreamSubscription<void>? _dbSubscription;
   
-  BannerAd? _bannerAd;
-  bool _isBannerAdLoaded = false;
 
   @override
   void initState() {
     super.initState();
     _loadPhotos();
-    
-    _loadPhotos();
-    _loadBannerAd();
     
     // Listen for database changes (captured in background)
     _dbSubscription = _databaseService.onChange.listen((_) {
@@ -45,14 +41,6 @@ class _GalleryScreenState extends State<GalleryScreen> {
     });
   }
 
-  void _loadBannerAd() {
-    _bannerAd = _adService.createBannerAd(
-      size: AdSize.banner,
-      onLoaded: () => setState(() => _isBannerAdLoaded = true),
-      onFailed: (error) => debugPrint('Banner failed: $error'),
-    );
-    _bannerAd?.load();
-  }
 
   Future<void> _loadPhotos() async {
     setState(() => _isLoading = true);
@@ -78,7 +66,6 @@ class _GalleryScreenState extends State<GalleryScreen> {
   @override
   void dispose() {
     _dbSubscription?.cancel();
-    _bannerAd?.dispose();
     super.dispose();
   }
 
@@ -98,15 +85,6 @@ class _GalleryScreenState extends State<GalleryScreen> {
                       ? _buildEmptyState()
                       : _buildPhotoGrid(),
             ),
-            // Adaptive Banner Ad
-            if (_isBannerAdLoaded && _bannerAd != null)
-              Container(
-                alignment: Alignment.center,
-                width: double.infinity,
-                height: _bannerAd!.size.height.toDouble(),
-                color: AppColors.backgroundDark,
-                child: AdWidget(ad: _bannerAd!),
-              ),
           ],
         ),
       ),

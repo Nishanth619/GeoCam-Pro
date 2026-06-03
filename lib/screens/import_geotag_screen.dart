@@ -144,7 +144,7 @@ class _ImportGeotagScreenState extends State<ImportGeotagScreen>
         imagePath: tmpPath,
         latitude: _lat!,
         longitude: _lon!,
-        dateTime: DateTime.now(),
+        dateTime: _locationService.effectiveDateTime,
       );
 
       // 3. Build a Photo object so WatermarkService can draw the overlay
@@ -153,7 +153,7 @@ class _ImportGeotagScreenState extends State<ImportGeotagScreen>
         latitude: _lat!,
         longitude: _lon!,
         address: _address,
-        capturedAt: DateTime.now(),
+        capturedAt: _locationService.effectiveDateTime,
       );
 
       // 4. Burn watermark + save to GeoCam gallery folder
@@ -177,7 +177,7 @@ class _ImportGeotagScreenState extends State<ImportGeotagScreen>
         latitude: _lat!,
         longitude: _lon!,
         address: _address,
-        capturedAt: DateTime.now(),
+        capturedAt: _locationService.effectiveDateTime,
       );
       await _databaseService.insertPhoto(dbPhoto);
 
@@ -193,11 +193,22 @@ class _ImportGeotagScreenState extends State<ImportGeotagScreen>
           content: Row(children: [
             const Icon(Icons.check_circle, color: Colors.white),
             const SizedBox(width: 12),
-            Text(AppLocalizations.of(context)!.importSuccess),
+            Expanded(
+              child: Text(
+                AppLocalizations.of(context)!.importSuccess,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+              ),
+            ),
           ]),
           backgroundColor: AppColors.primary.withValues(alpha: 0.9),
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
         ),
       );
 
@@ -207,9 +218,15 @@ class _ImportGeotagScreenState extends State<ImportGeotagScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(AppLocalizations.of(context)!.importSaveFailed(e.toString())),
-          backgroundColor: AppColors.error,
+          content: Text(
+            AppLocalizations.of(context)!.importSaveFailed(e.toString()),
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+          ),
+          backgroundColor: Colors.red[800],
           behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
         ),
       );
     } finally {
@@ -282,28 +299,31 @@ class _ImportGeotagScreenState extends State<ImportGeotagScreen>
                 ),
               ),
               const SizedBox(width: 14),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    'GEOCAM PRO',
-                    style: TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 2.5,
-                      color: AppColors.primary,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'GEOCAM PRO',
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 2.5,
+                        color: AppColors.primary,
+                      ),
                     ),
-                  ),
-                  Text(
-                    AppLocalizations.of(context)!.importTitle,
-                    style: const TextStyle(
-                      fontSize: 19,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                    Text(
+                      AppLocalizations.of(context)!.importTitle,
+                      style: const TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ],
           ),
@@ -503,13 +523,16 @@ class _ImportGeotagScreenState extends State<ImportGeotagScreen>
                   const Icon(Icons.my_location,
                       color: AppColors.primary, size: 13),
                   const SizedBox(width: 6),
-                  Text(
-                    '${_lat!.toStringAsFixed(6)}°, ${_lon!.toStringAsFixed(6)}°',
-                    style: const TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 12,
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.w600,
+                  Flexible(
+                    child: Text(
+                      '${_lat!.toStringAsFixed(6)}°, ${_lon!.toStringAsFixed(6)}°',
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 12,
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],
@@ -565,13 +588,16 @@ class _ImportGeotagScreenState extends State<ImportGeotagScreen>
               children: [
                 const Icon(Icons.layers_outlined, color: Colors.white54, size: 16),
                 const SizedBox(width: 8),
-                Text(
-                  AppLocalizations.of(context)!.importWatermarkOptions,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.5,
-                    color: Colors.white54,
+                Flexible(
+                  child: Text(
+                    AppLocalizations.of(context)!.importWatermarkOptions,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.5,
+                      color: Colors.white54,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],

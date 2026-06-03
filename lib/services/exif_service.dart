@@ -112,14 +112,10 @@ class ExifService {
     }
   }
 
-  /// Format decimal coordinate to EXIF format (degrees/minutes/seconds)
+  /// Format decimal coordinate to EXIF format
+  /// native_exif plugin expects a decimal string for GPSLatitude and GPSLongitude
+  /// as it internally uses Double.parseDouble() before passing to ExifInterface.
   String _formatGpsCoordinate(double decimal) {
-    int degrees = decimal.floor();
-    double minutesDecimal = (decimal - degrees) * 60;
-    int minutes = minutesDecimal.floor();
-    double seconds = (minutesDecimal - minutes) * 60;
-    
-    // EXIF format: "degrees/1,minutes/1,seconds*10000/10000"
-    return '$degrees/1,$minutes/1,${(seconds * 10000).round()}/10000';
+    return decimal.toString();
   }
 }

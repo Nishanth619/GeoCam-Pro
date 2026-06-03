@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "593131153354",
+    "project_id": "geocampro-f8cad",
+    "storage_bucket": "geocampro-f8cad.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:593131153354:android:c5ae73c1be25f0fb395133",
+        "android_client_info": {
+          "package_name": "com.geocam.geocam_flutter"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCNQintFxpTpRKb-EG6i0rhUN_21EOLjfw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

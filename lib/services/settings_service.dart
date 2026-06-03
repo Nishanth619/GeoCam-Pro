@@ -36,6 +36,14 @@ class SettingsService {
   static const String _keyTemplateDateFormat = 'template_date_format';
   static const String _keyTemplateCoordFormat = 'template_coord_format';
   static const String _keyRewardExpiration = 'reward_expiration_time';
+  // One-shot key: set true when user watches a rewarded ad for custom geo edit.
+  // Cleared immediately after the location is confirmed (single-use).
+  static const String _keyHasOneTimeGeoEdit = 'has_one_time_geo_edit';
+
+  
+  // Subscription keys
+  static const String _keyRealSubscriptionActive = 'real_subscription_active';
+  static const String _keyActiveProductId = 'active_product_id';
 
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
@@ -130,11 +138,44 @@ class SettingsService {
     }
   }
 
-  bool get isPremiumUnlocked {
+  bool get isRewardActive {
     final expiration = rewardExpiration;
     if (expiration == null) return false;
     return DateTime.now().isBefore(expiration);
   }
+
+  // ── One-shot custom geo edit (earned by watching one rewarded ad) ────────
+  /// True only after user watches a rewarded ad specifically for geo editing.
+  /// Consumed (set back to false) immediately after the location is confirmed.
+  bool get hasOneTimeGeoEdit =>
+      _prefs?.getBool(_keyHasOneTimeGeoEdit) ?? false;
+  set hasOneTimeGeoEdit(bool value) =>
+      _prefs?.setBool(_keyHasOneTimeGeoEdit, value);
+
+  // ============= Subscription Settings (Real IAP) =============
+
+  bool get isRealSubscriptionActive =>
+      _prefs?.getBool(_keyRealSubscriptionActive) ?? false;
+  set isRealSubscriptionActive(bool value) =>
+      _prefs?.setBool(_keyRealSubscriptionActive, value);
+
+  String? get activeProductId => _prefs?.getString(_keyActiveProductId);
+  set activeProductId(String? value) {
+    if (value == null) {
+      _prefs?.remove(_keyActiveProductId);
+    } else {
+      _prefs?.setString(_keyActiveProductId, value);
+    }
+  }
+
+  /// True ONLY when the user has an active paid subscription.
+  /// Reward ad watchers do NOT get isPremiumUnlocked = true —
+  /// so banner and interstitial ads keep running for them.
+  bool get isPremiumUnlocked => isRealSubscriptionActive;
+
+  /// True when user can access premium FEATURES (paid sub OR active 24-h reward).
+  /// Use this to gate feature access (map styles, watermark, etc.) — NOT ads.
+  bool get hasFeatureAccess => isRealSubscriptionActive || isRewardActive;
 
   // ============= Helper Methods =============
 

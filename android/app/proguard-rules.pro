@@ -69,3 +69,23 @@
 -keep class io.flutter.embedding.** { *; }
 -dontwarn io.flutter.embedding.**
 
+# ─── AdMob Mediation Network ProGuard Rules ──────────────────────────────────
+
+# Meta (Facebook) Audience Network
+-keep class com.facebook.** { *; }
+-keep interface com.facebook.** { *; }
+-dontwarn com.facebook.**
+# Suppress missing Facebook infer annotation classes (compile-time only)
+-dontwarn com.facebook.infer.annotation.**
+
+# AppLovin
+-keep class com.applovin.** { *; }
+-keep interface com.applovin.** { *; }
+-dontwarn com.applovin.**
+
+# Unity Ads
+-keep class com.unity3d.** { *; }
+-keep interface com.unity3d.** { *; }
+-dontwarn com.unity3d.**
+-keep class com.unity3d.services.** { *; }
+-dontwarn com.unity3d.services.**

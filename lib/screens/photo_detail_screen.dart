@@ -231,7 +231,19 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
               if (_photo != null) {
                 Clipboard.setData(ClipboardData(text: _photo!.coordinatesDD));
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(AppLocalizations.of(context)!.photoCoordscopied)),
+                  SnackBar(
+                    content: Text(
+                      AppLocalizations.of(context)!.photoCoordscopied,
+                      style: const TextStyle(
+                          color: Colors.white, fontSize: 13),
+                    ),
+                    backgroundColor: const Color(0xFF1A2332),
+                    behavior: SnackBarBehavior.floating,
+                    margin: const EdgeInsets.all(16),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                    duration: const Duration(seconds: 2),
+                  ),
                 );
               }
             },

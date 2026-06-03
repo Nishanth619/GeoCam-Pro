@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:async';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:geocam_flutter/l10n/app_localizations.dart';
 
@@ -7,6 +8,8 @@ import 'theme/app_theme.dart';
 import 'screens/splash_screen.dart';
 import 'services/settings_service.dart';
 import 'services/ad_service.dart';
+import 'services/subscription_service.dart';
+import 'services/location_service.dart';
 
 // Global notifier for changing the app language without restarting
 final ValueNotifier<Locale?> appLocaleNotifier = ValueNotifier<Locale?>(null);
@@ -25,6 +28,12 @@ void main() async {
   
   // Initialize AdMob in the background — do NOT await.
   AdService().initialize();
+  
+  // Initialize Subscription Service in the background — do NOT await.
+  SubscriptionService().initialize();
+
+  // Load any previously saved manual datetime override from storage.
+  unawaited(LocationService().loadPersistedDateTime());
   
   // Set preferred orientations
   SystemChrome.setPreferredOrientations([

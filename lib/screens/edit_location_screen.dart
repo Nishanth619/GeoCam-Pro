@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 import '../theme/app_theme.dart';
 import '../services/location_service.dart';
@@ -36,6 +37,10 @@ class _EditLocationScreenState extends State<EditLocationScreen>
 
   // Whether the user is actively dragging the map (crosshair animates).
   bool _isDragging = false;
+
+  // ─── Custom Date & Time ───────────────────────────────────────────────────
+  DateTime? _customDate;
+  TimeOfDay? _customTime;
 
   // Search
   final TextEditingController _searchController = TextEditingController();
@@ -90,6 +95,13 @@ class _EditLocationScreenState extends State<EditLocationScreen>
     } else {
       _reverseGeocode(_pinnedLatLng);
     }
+
+    // Pre-fill date/time if a manual override is already active.
+    if (_locationService.isManualDateTimeActive) {
+      final dt = _locationService.manualDateTime!;
+      _customDate = DateTime(dt.year, dt.month, dt.day);
+      _customTime = TimeOfDay(hour: dt.hour, minute: dt.minute);
+    }
   }
 
   @override
@@ -118,9 +130,10 @@ class _EditLocationScreenState extends State<EditLocationScreen>
       _pinnedAddress = 'Searching address…';
     });
 
-    // Debounce geocoding — only fire 600ms after the user stops dragging.
+    // Debounce geocoding — only fire 800ms after the user stops dragging.
+    // Increased from 600ms to reduce unnecessary API calls while panning.
     _geocodeDebounce?.cancel();
-    _geocodeDebounce = Timer(const Duration(milliseconds: 600), () {
+    _geocodeDebounce = Timer(const Duration(milliseconds: 800), () {
       if (mounted) {
         setState(() => _isDragging = false);
         HapticFeedback.lightImpact(); // satisfying micro-haptic on pin drop
@@ -157,13 +170,41 @@ class _EditLocationScreenState extends State<EditLocationScreen>
 
   // ─── CONFIRM: set the override ───────────────────────────────────────────────
 
-  void _confirmLocation() {
+  /// Confirms the location override using [address].
+  /// If geocoding is still running, call with `_fallbackLabel(_pinnedLatLng)`.
+  void _confirmLocationWithAddress(String address) {
     HapticFeedback.mediumImpact();
     _locationService.setManualOverride(
       _pinnedLatLng.latitude,
       _pinnedLatLng.longitude,
-      _pinnedAddress,
+      address,
     );
+
+    // Apply custom date/time if either has been set by the user.
+    if (_customDate != null || _customTime != null) {
+      final date = _customDate ?? DateTime.now();
+      final time = _customTime ?? TimeOfDay.now();
+      final combined = DateTime(
+        date.year,
+        date.month,
+        date.day,
+        time.hour,
+        time.minute,
+      );
+      _locationService.setManualDateTime(combined);
+      debugPrint('🕐 Saved custom datetime: $combined');
+    } else {
+      // Both null — clear any previous override so camera uses system time.
+      _locationService.clearManualDateTime();
+    }
+
+    // Consume the one-shot geo edit token (if it was used).
+    // After this point the user must watch another ad to edit again.
+    if (_settings.hasOneTimeGeoEdit) {
+      _settings.hasOneTimeGeoEdit = false;
+      debugPrint('🎯 One-shot geo edit consumed.');
+    }
+
     // Show an interstitial ad when confirming (non-blocking).
     _adService.showInterstitialAd();
 
@@ -171,11 +212,20 @@ class _EditLocationScreenState extends State<EditLocationScreen>
     Navigator.of(context).pop(true); // true = location was updated
   }
 
+  /// Convenience: uses current address (or coordinate fallback if still geocoding).
+  void _confirmLocation() {
+    final address = _isGeocodingAddress
+        ? _fallbackLabel(_pinnedLatLng)
+        : _pinnedAddress;
+    _confirmLocationWithAddress(address);
+  }
+
   // ─── CLEAR override and go back to GPS ──────────────────────────────────────
 
   void _clearOverride() {
     HapticFeedback.lightImpact();
     _locationService.clearManualOverride();
+    _locationService.clearManualDateTime();
     if (!mounted) return;
     Navigator.of(context).pop(false); // false = override cleared
   }
@@ -272,18 +322,98 @@ class _EditLocationScreenState extends State<EditLocationScreen>
       _onSuggestionSelected(results.first);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Location not found. Try a different search.'),
-          backgroundColor: AppColors.error,
+        SnackBar(
+          content: const Text(
+            'Location not found. Try a different search.',
+            style: TextStyle(color: Colors.white, fontSize: 13),
+          ),
+          backgroundColor: Colors.red[800],
           behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
         ),
       );
     }
   }
 
+  // ─── DATE & TIME PICKERS ─────────────────────────────────────────────────
+
+  Future<void> _pickDate() async {
+    HapticFeedback.lightImpact();
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _customDate ?? now,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+      builder: (context, child) => Theme(
+        data: ThemeData.dark().copyWith(
+          colorScheme: const ColorScheme.dark(
+            primary: AppColors.primary,
+            onPrimary: Color(0xFF0F1A24),
+            surface: Color(0xFF0F1A24),
+            onSurface: Colors.white,
+          ),
+          dialogTheme: const DialogThemeData(
+            backgroundColor: Color(0xFF0F1A24),
+          ),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked != null && mounted) {
+      setState(() => _customDate = picked);
+      // Auto-open time picker right after date is chosen.
+      if (_customTime == null) _pickTime();
+    }
+  }
+
+  Future<void> _pickTime() async {
+    HapticFeedback.lightImpact();
+    final now = TimeOfDay.now();
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _customTime ?? now,
+      builder: (context, child) => Theme(
+        data: ThemeData.dark().copyWith(
+          colorScheme: const ColorScheme.dark(
+            primary: AppColors.primary,
+            onPrimary: Color(0xFF0F1A24),
+            surface: Color(0xFF0F1A24),
+            onSurface: Colors.white,
+          ),
+          dialogTheme: const DialogThemeData(
+            backgroundColor: Color(0xFF0F1A24),
+          ),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked != null && mounted) {
+      setState(() {
+        _customTime = picked;
+        // Auto-set today as date if user only picked time.
+        _customDate ??= DateTime.now();
+      });
+    }
+  }
+
+  void _clearDateTime() {
+    HapticFeedback.lightImpact();
+    setState(() {
+      _customDate = null;
+      _customTime = null;
+    });
+  }
+
   // ─── AD-UNLOCK GATE (same pattern as template styles) ───────────────────────
 
   void _showAdUnlockDialog() {
+    // Snapshot address NOW before showing dialog (geocoding may still be running).
+    final snapshotAddress = _isGeocodingAddress
+        ? _fallbackLabel(_pinnedLatLng)
+        : _pinnedAddress;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -307,7 +437,7 @@ class _EditLocationScreenState extends State<EditLocationScreen>
                     borderRadius: BorderRadius.circular(10))),
             onPressed: () {
               Navigator.pop(ctx);
-              _watchAdToUnlock();
+              _watchAdToUnlock(snapshotAddress);
             },
             child: const Text('WATCH AD',
                 style: TextStyle(
@@ -318,22 +448,31 @@ class _EditLocationScreenState extends State<EditLocationScreen>
     );
   }
 
-  void _watchAdToUnlock() {
+  void _watchAdToUnlock(String address) {
     if (_adService.isRewardedInterstitialReady()) {
       _adService.showRewardedInterstitialAd(
         onUserEarnedReward: (ad, reward) {
-          // Give them 24 hours.
-          _settings.rewardExpiration =
-              DateTime.now().add(const Duration(hours: 24));
+          // Grant ONE custom geo edit (one-shot — consumed on confirm).
+          _settings.hasOneTimeGeoEdit = true;
           // Immediately allow them to confirm.
-          if (mounted) _confirmLocation();
+          if (mounted) _confirmLocationWithAddress(address);
         },
       );
     } else {
       // Capture messenger before the async gap.
       final messenger = ScaffoldMessenger.of(context);
       messenger.showSnackBar(
-        const SnackBar(content: Text('Ad not ready. Please try again.')),
+        const SnackBar(
+          content: Text(
+            'Ad not ready. Please try again.',
+            style: TextStyle(color: Colors.white, fontSize: 13),
+          ),
+          backgroundColor: Color(0xFF1A2332),
+          behavior: SnackBarBehavior.floating,
+          margin: EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(12))),
+        ),
       );
     }
   }
@@ -352,8 +491,15 @@ class _EditLocationScreenState extends State<EditLocationScreen>
     if (pos == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('GPS position not available yet.'),
+          content: Text(
+            'GPS position not available yet.',
+            style: TextStyle(color: Colors.white, fontSize: 13),
+          ),
+          backgroundColor: Color(0xFF1A2332),
           behavior: SnackBarBehavior.floating,
+          margin: EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(12))),
         ),
       );
       return;
@@ -564,12 +710,17 @@ class _EditLocationScreenState extends State<EditLocationScreen>
                                   const Icon(Icons.gps_fixed,
                                       color: AppColors.error, size: 14),
                                   const SizedBox(width: 6),
-                                  Text(AppLocalizations.of(context)!.editLocationClearBtn.toUpperCase(),
+                                  Flexible(
+                                    child: Text(
+                                      AppLocalizations.of(context)!.editLocationClearBtn.toUpperCase(),
                                       style: const TextStyle(
                                           color: AppColors.error,
                                           fontSize: 11,
                                           fontWeight: FontWeight.bold,
-                                          letterSpacing: 0.5)),
+                                          letterSpacing: 0.5),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
@@ -777,14 +928,17 @@ class _EditLocationScreenState extends State<EditLocationScreen>
                             const Icon(Icons.my_location,
                                 color: AppColors.primary, size: 14),
                             const SizedBox(width: 8),
-                            Text(
-                              '${_pinnedLatLng.latitude.toStringAsFixed(6)}°, '
-                              '${_pinnedLatLng.longitude.toStringAsFixed(6)}°',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontFamily: 'monospace',
-                                color: AppColors.primary,
-                                fontWeight: FontWeight.w600,
+                            Flexible(
+                              child: Text(
+                                '${_pinnedLatLng.latitude.toStringAsFixed(6)}°, '
+                                '${_pinnedLatLng.longitude.toStringAsFixed(6)}°',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontFamily: 'monospace',
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                           ],
@@ -808,10 +962,12 @@ class _EditLocationScreenState extends State<EditLocationScreen>
                                             strokeWidth: 1.5),
                                       ),
                                       const SizedBox(width: 8),
-                                      const Text('Finding address…',
-                                          style: TextStyle(
-                                              color: Colors.white54,
-                                              fontSize: 13))
+                                      const Flexible(
+                                        child: Text('Finding address…',
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                                color: Colors.white54,
+                                                fontSize: 13)))
                                     ])
                                   : Text(
                                       _pinnedAddress,
@@ -825,17 +981,46 @@ class _EditLocationScreenState extends State<EditLocationScreen>
                             ),
                           ],
                         ),
+                        const SizedBox(height: 16),
+                        // ── DATE & TIME EDITOR ─────────────────────────────
+                        _buildDateTimeRow(),
                         const SizedBox(height: 20),
                         // Use This Location button
                         SizedBox(
                           width: double.infinity,
                           height: 54,
                           child: ElevatedButton.icon(
-                            onPressed: _isDragging || _isGeocodingAddress
+                            // Only block while actively dragging (pin still moving).
+                            // Geocoding runs in background — no longer a blocker.
+                            onPressed: _isDragging
                                 ? null
-                                : () {
-                                    if (_settings.isPremiumUnlocked) {
-                                      _confirmLocation();
+                                 : () {
+                                    // Snapshot the address now. If geocoding is still
+                                    // running, use coordinate string as fallback.
+                                    final address = _isGeocodingAddress
+                                        ? _fallbackLabel(_pinnedLatLng)
+                                        : _pinnedAddress;
+                                    // ── ALWAYS save the custom date/time first ──
+                                    // Date/time editing is free. Only the location
+                                    // pin override is gated behind premium/ad.
+                                    if (_customDate != null || _customTime != null) {
+                                      final date = _customDate ?? DateTime.now();
+                                      final time = _customTime ?? TimeOfDay.now();
+                                      final combined = DateTime(
+                                        date.year, date.month, date.day,
+                                        time.hour, time.minute,
+                                      );
+                                      _locationService.setManualDateTime(combined);
+                                    } else {
+                                      _locationService.clearManualDateTime();
+                                    }
+
+                                    // ── Then gate the LOCATION override ──
+                                    // Real subscribers always allowed.
+                                    // Reward watchers get one-shot access.
+                                    if (_settings.isRealSubscriptionActive ||
+                                        _settings.hasOneTimeGeoEdit) {
+                                      _confirmLocationWithAddress(address);
                                     } else {
                                       _showAdUnlockDialog();
                                     }
@@ -873,6 +1058,211 @@ class _EditLocationScreenState extends State<EditLocationScreen>
       ),
     );
   }
+
+   // ─── DATE & TIME ROW WIDGET ──────────────────────────────────────────────
+
+  Widget _buildDateTimeRow() {
+    final hasDate = _customDate != null;
+    final hasTime = _customTime != null;
+    final isCustom = hasDate || hasTime;
+
+    final dateLabel = hasDate
+        ? DateFormat('MMM d, yyyy').format(_customDate!)
+        : 'Set Date';
+    final timeLabel = hasTime
+        ? _customTime!.format(context)
+        : 'Set Time';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Section header
+        Row(
+          children: [
+            const Icon(Icons.schedule, color: AppColors.primary, size: 14),
+            const SizedBox(width: 8),
+            Flexible(
+              child: const Text(
+                'CAPTURE DATE & TIME',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.5,
+                  color: AppColors.primary,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 6),
+            // "CUSTOM" badge when overriding
+            if (isCustom)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                      color: AppColors.primary.withValues(alpha: 0.4)),
+                ),
+                child: const Text(
+                  'CUSTOM',
+                  style: TextStyle(
+                    fontSize: 8,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.primary,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ),
+            const Spacer(),
+            // Clear button
+            if (isCustom)
+              GestureDetector(
+                onTap: _clearDateTime,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border:
+                        Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.close, color: Colors.redAccent, size: 12),
+                      SizedBox(width: 4),
+                      Text(
+                        'Clear',
+                        style: TextStyle(
+                          color: Colors.redAccent,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        // Date + Time pill buttons
+        Row(
+          children: [
+            // ── Date pill ──────────────────────────────────────────────
+            Expanded(
+              child: GestureDetector(
+                onTap: _pickDate,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: hasDate
+                        ? AppColors.primary.withValues(alpha: 0.12)
+                        : Colors.white.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: hasDate
+                          ? AppColors.primary.withValues(alpha: 0.5)
+                          : Colors.white24,
+                      width: hasDate ? 1.5 : 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.calendar_today_rounded,
+                        color: hasDate ? AppColors.primary : Colors.white54,
+                        size: 15,
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          dateLabel,
+                          style: TextStyle(
+                            color: hasDate ? Colors.white : Colors.white54,
+                            fontSize: 13,
+                            fontWeight: hasDate
+                                ? FontWeight.w600
+                                : FontWeight.normal,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            // ── Time pill ──────────────────────────────────────────────
+            Expanded(
+              child: GestureDetector(
+                onTap: _pickTime,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: hasTime
+                        ? AppColors.primary.withValues(alpha: 0.12)
+                        : Colors.white.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: hasTime
+                          ? AppColors.primary.withValues(alpha: 0.5)
+                          : Colors.white24,
+                      width: hasTime ? 1.5 : 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.access_time_rounded,
+                        color: hasTime ? AppColors.primary : Colors.white54,
+                        size: 15,
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          timeLabel,
+                          style: TextStyle(
+                            color: hasTime ? Colors.white : Colors.white54,
+                            fontSize: 13,
+                            fontWeight: hasTime
+                                ? FontWeight.w600
+                                : FontWeight.normal,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        // Helper note
+        if (!isCustom)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              'Optional — leave blank to use current system time',
+              style: TextStyle(
+                fontSize: 10,
+                color: Colors.white.withValues(alpha: 0.3),
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
 }
 
 /// Draws the downward triangle "needle" of the custom pin.

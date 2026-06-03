@@ -6,6 +6,7 @@ import '../services/settings_service.dart';
 import '../services/watermark_service.dart';
 import '../services/database_service.dart';
 import '../models/photo_model.dart';
+import 'premium_screen.dart';
 
 class WatermarkEditorScreen extends StatefulWidget {
   const WatermarkEditorScreen({super.key});
@@ -65,8 +66,19 @@ class _WatermarkEditorScreenState extends State<WatermarkEditorScreen> {
     Navigator.pop(context);
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Watermark settings saved'),
+        content: Text(
+          'Watermark settings saved',
+          style: TextStyle(
+            color: Color(0xFF0F1A24),
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+          ),
+        ),
         backgroundColor: AppColors.primary,
+        behavior: SnackBarBehavior.floating,
+        margin: EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(12))),
       ),
     );
   }
@@ -75,8 +87,15 @@ class _WatermarkEditorScreenState extends State<WatermarkEditorScreen> {
     if (_previewPhoto == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No photo to export'),
-          backgroundColor: Colors.orange,
+          content: Text(
+            'No photo to export',
+            style: TextStyle(color: Colors.white, fontSize: 13),
+          ),
+          backgroundColor: Color(0xFFB45309),
+          behavior: SnackBarBehavior.floating,
+          margin: EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(12))),
         ),
       );
       return;
@@ -100,11 +119,22 @@ class _WatermarkEditorScreenState extends State<WatermarkEditorScreen> {
     if (exportPath != null && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Photo exported with watermark!'),
+          content: const Text(
+            'Photo exported with watermark!',
+            style: TextStyle(
+              color: Color(0xFF0F1A24),
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+            ),
+          ),
           backgroundColor: AppColors.primary,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
           action: SnackBarAction(
             label: 'Share',
-            textColor: Colors.white,
+            textColor: const Color(0xFF0F1A24),
             onPressed: () => Share.shareXFiles([XFile(exportPath)]),
           ),
         ),
@@ -256,13 +286,44 @@ class _WatermarkEditorScreenState extends State<WatermarkEditorScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
-                      'Logo',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
+                    Row(
+                      children: [
+                        const Text(
+                          'Logo',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        // PRO badge if not subscribed
+                        if (!_settings.hasFeatureAccess)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: AppColors.primary.withValues(alpha: 0.4)),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.lock, size: 10, color: AppColors.primary),
+                                SizedBox(width: 3),
+                                Text(
+                                  'PRO',
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.primary,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
                     ),
                     TextButton(
                       onPressed: () {
@@ -280,35 +341,83 @@ class _WatermarkEditorScreenState extends State<WatermarkEditorScreen> {
                 ),
               ),
               const SizedBox(height: 8),
+              // Logo grid — locked for free users
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: _logoOptions.asMap().entries.map((entry) {
-                    final isSelected = entry.key == _selectedLogo;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 12),
-                      child: GestureDetector(
-                        onTap: () => setState(() => _selectedLogo = entry.key),
-                        child: Container(
-                          width: 56,
-                          height: 56,
-                          decoration: BoxDecoration(
-                            color: AppColors.cardDark,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: isSelected ? AppColors.primary : AppColors.cardBorder,
-                              width: isSelected ? 2 : 1,
+                child: Stack(
+                  children: [
+                    // Logo options row
+                    Row(
+                      children: _logoOptions.asMap().entries.map((entry) {
+                        final isSelected = entry.key == _selectedLogo;
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 12),
+                          child: GestureDetector(
+                            onTap: _settings.hasFeatureAccess
+                                ? () => setState(() => _selectedLogo = entry.key)
+                                : null,
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              width: 56,
+                              height: 56,
+                              decoration: BoxDecoration(
+                                color: AppColors.cardDark,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: isSelected ? AppColors.primary : AppColors.cardBorder,
+                                  width: isSelected ? 2 : 1,
+                                ),
+                              ),
+                              child: Icon(
+                                entry.value,
+                                color: _settings.hasFeatureAccess
+                                    ? (isSelected ? AppColors.primary : AppColors.textMuted)
+                                    : Colors.grey[700],
+                                size: 24,
+                              ),
                             ),
                           ),
-                          child: Icon(
-                            entry.value,
-                            color: isSelected ? AppColors.primary : AppColors.textMuted,
-                            size: 24,
+                        );
+                      }).toList(),
+                    ),
+                    // Lock overlay for free users
+                    if (!_settings.hasFeatureAccess)
+                      Positioned.fill(
+                        child: GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const PremiumScreen(),
+                              ),
+                            ).then((_) => setState(() {}));
+                          },
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.65),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.lock_rounded, color: AppColors.primary, size: 22),
+                                  SizedBox(height: 4),
+                                  Text(
+                                    'Upgrade to PRO',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                         ),
                       ),
-                    );
-                  }).toList(),
+                  ],
                 ),
               ),
               const SizedBox(height: 24),

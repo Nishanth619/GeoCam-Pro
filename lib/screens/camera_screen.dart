@@ -5,12 +5,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:image/image.dart' as img;
 
 import 'package:sensors_plus/sensors_plus.dart';
 import '../theme/app_theme.dart';
 import '../widgets/gps_hud_card.dart';
 import '../widgets/zoom_slider.dart';
+import '../widgets/soft_paywall_banner.dart';
 import '../services/ad_service.dart';
 import '../services/camera_service.dart';
 import '../services/location_service.dart';
@@ -70,8 +72,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   // Last captured photo for gallery thumbnail
   Photo? _lastPhoto;
 
-  // Real-time HUD updates
-  DateTime _currentTime = DateTime.now();
+  // Real-time HUD updates — timer triggers setState so effectiveDateTime refreshes each second
   Timer? _timeUpdateTimer;
 
   // Focus state
@@ -126,11 +127,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   void _startTimeUpdates() {
     _timeUpdateTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (mounted) {
-        setState(() {
-          _currentTime = DateTime.now();
-        });
-      }
+      if (mounted) setState(() {});
     });
   }
 
@@ -306,9 +303,17 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     if (!_cameraService.hasFlash) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Flash not supported on this camera'),
-            duration: Duration(seconds: 1),
+          SnackBar(
+            content: const Text(
+              'Flash not supported on this camera',
+              style: TextStyle(color: Colors.white, fontSize: 13),
+            ),
+            backgroundColor: const Color(0xFF1A2332),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(16),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12)),
+            duration: const Duration(seconds: 2),
           ),
         );
       }
@@ -355,11 +360,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Future<void> _capturePhoto() async {
     if (_isCapturing || !_cameraService.isInitialized) return;
 
-    // ⚡ SNAPSHOT the sensor orientation NOW — before the async capture.
-    // The camera capture takes hundreds of ms, and the user may rotate
-    // the phone back to portrait by the time processing starts.
+    // ⚡ SNAPSHOT both orientation AND datetime NOW at shutter press.
+    // capturedAt must be read here — before any async gaps — so the
+    // manual override value can't be cleared between press and processing.
     final double shutterRotationTurns = _hudRotationTurns;
-    debugPrint('📸 SHUTTER PRESSED → snapshot rotationTurns=$shutterRotationTurns');
+    final DateTime shutterCapturedAt = _locationService.effectiveDateTime;
+    debugPrint('📸 SHUTTER → rotationTurns=$shutterRotationTurns | capturedAt=$shutterCapturedAt | isManualDT=${_locationService.isManualDateTimeActive}');
 
     // 1. INSTANT FEEDBACK: Shutter sound (optional) and Visual Flash
     setState(() {
@@ -383,8 +389,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       });
 
       if (imagePath != null) {
-        // Fire and forget — pass the SNAPSHOTTED rotation, not the live one
-        unawaited(_processCapturedPhoto(imagePath, shutterRotationTurns));
+        // Pass BOTH snapshotted values — rotation AND capturedAt
+        unawaited(_processCapturedPhoto(imagePath, shutterRotationTurns, shutterCapturedAt));
         
         // Monetization: Trigger Interstitial ad logic
         _adService.onPhotoCaptured(showAfterCount: 3);
@@ -397,13 +403,13 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
-  /// Background pipeline for heavy image processing
-  /// [rotationTurns] is snapshotted at shutter press time, not read from live sensor.
-  Future<void> _processCapturedPhoto(String imagePath, double rotationTurns) async {
+  /// Background pipeline for heavy image processing.
+  /// [rotationTurns] and [capturedAt] are both snapshotted at shutter-press
+  /// time so async gaps cannot affect them.
+  Future<void> _processCapturedPhoto(
+      String imagePath, double rotationTurns, DateTime capturedAt) async {
     try {
-      // Capture current state to ensure consistency across the background flow.
-      // Prefer the effective position (manual override or GPS).
-      final capturedAt = DateTime.now();
+      // All values are snapshotted — no reads from live state after this point.
       final position = _locationService.effectivePosition;
       final address = _locationService.isManualOverrideActive
           ? _locationService.manualOverrideAddress
@@ -411,7 +417,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       final temp = _temperature;
       final weather = _weatherCondition;
       final currentAspectRatio = _aspectRatio;
-      debugPrint('📸 PROCESSING → rotationTurns=$rotationTurns (live _hudRotationTurns=$_hudRotationTurns)');
+      debugPrint('📸 PROCESSING → capturedAt=$capturedAt | rotationTurns=$rotationTurns');
       debugPrint('📍 Using ${_locationService.isManualOverrideActive ? "MANUAL" : "GPS"} position: ${position?.latitude}, ${position?.longitude}');
 
       // 1. Apply aspect ratio cropping if needed (using Isolate)
@@ -487,16 +493,27 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           SnackBar(
             content: Row(
               children: [
-                const Icon(Icons.check_circle_outline, color: AppColors.primary, size: 20),
+                const Icon(Icons.check_circle_outline,
+                    color: AppColors.primary, size: 20),
                 const SizedBox(width: 12),
-                const Expanded(child: Text('Photo processed and saved!', style: TextStyle(fontWeight: FontWeight.bold))),
+                const Expanded(
+                  child: Text(
+                    'Photo processed and saved!',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
               ],
             ),
-            backgroundColor: AppColors.cardDark,
+            backgroundColor: const Color(0xFF1A2332),
             behavior: SnackBarBehavior.floating,
             margin: const EdgeInsets.all(20),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            duration: const Duration(seconds: 1),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12)),
+            duration: const Duration(seconds: 2),
           ),
         );
       }
@@ -801,6 +818,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const SizedBox(height: 12),
+                  // ── SHUTTER ROW ───────────────────────────────────────
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 32),
                     child: Row(
@@ -987,13 +1005,55 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     );
   }
 
+  String _formatDebugDateTime(DateTime dt) {
+    final d = dt.day.toString().padLeft(2, '0');
+    final m = dt.month.toString().padLeft(2, '0');
+    final y = dt.year.toString();
+    final h = dt.hour.toString().padLeft(2, '0');
+    final min = dt.minute.toString().padLeft(2, '0');
+    return '$d/$m/$y $h:$min';
+  }
+
   void _openEditLocation() {
     Navigator.of(context)
         .push(MaterialPageRoute(
           builder: (_) => const EditLocationScreen(),
         ))
         .then((_) {
-      if (mounted) setState(() {});
+      if (!mounted) return;
+      setState(() {});
+      // Show confirmation SnackBar so the user can verify what was saved.
+      if (_locationService.isManualDateTimeActive) {
+        final dt = _locationService.effectiveDateTime;
+        final label =
+            '${dt.day.toString().padLeft(2,'0')}/${dt.month.toString().padLeft(2,'0')}/${dt.year}  '
+            '${dt.hour.toString().padLeft(2,'0')}:${dt.minute.toString().padLeft(2,'0')}';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(children: [
+              const Icon(Icons.schedule,
+                  color: AppColors.primary, size: 18),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Custom datetime set: $label',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ]),
+            backgroundColor: const Color(0xFF1A2332),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(20),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12)),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
     });
   }
 
@@ -1009,46 +1069,45 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
   Widget _buildGpsHud({bool isLandscape = false}) {
-    final effective = _locationService.effectivePosition;
-    final isManual = _locationService.isManualOverrideActive;
+    // Camera preview ALWAYS shows live GPS position and current system time.
+    // Custom overrides (set in EditLocationScreen) only apply at the moment
+    // of capture (shutter press) — not to the live preview HUD.
+    final livePosition = _currentPosition;
     final l10n = AppLocalizations.of(context)!;
-    final displayAddress = isManual
-        ? (_locationService.manualOverrideAddress ?? l10n.manualLocation)
-        : (_currentAddress ?? l10n.acquiringLocation);
+    final displayAddress = _currentAddress ?? l10n.acquiringLocation;
     return GpsHudCard(
       isLandscape: isLandscape,
       address: displayAddress,
-      coordinates: effective != null
+      coordinates: livePosition != null
           ? (_settings.templateCoordFormat == 'Decimal Degrees (DD)'
               ? _locationService.formatCoordinatesDD(
-                  effective.latitude,
-                  effective.longitude,
+                  livePosition.latitude,
+                  livePosition.longitude,
                 )
               : _locationService.formatCoordinatesDMS(
-                  effective.latitude,
-                  effective.longitude,
+                  livePosition.latitude,
+                  livePosition.longitude,
                 ))
           : l10n.noGpsSignal,
-      altitude: effective?.altitude != null
-          ? _settings.formatAltitude(effective!.altitude)
+      altitude: livePosition?.altitude != null
+          ? _settings.formatAltitude(livePosition!.altitude)
           : '--',
       temperature: _temperature != null
           ? _settings.formatTemperature(_temperature)
           : '--',
-      gpsSignal: isManual
-          ? l10n.gpsManual
-          : _locationService.getGpsSignalStrength(_currentPosition?.accuracy),
-      dateTime: _currentTime,
-      latitude: effective?.latitude,
-      longitude: effective?.longitude,
-      heading: effective?.heading,
+      gpsSignal: _locationService.getGpsSignalStrength(_currentPosition?.accuracy),
+      dateTime: DateTime.now(), // Always live time in preview
+      isManualDateTime: false,  // Never show "CUSTOM" badge in live preview
+      latitude: livePosition?.latitude,
+      longitude: livePosition?.longitude,
+      heading: livePosition?.heading,
       showAddress: _settings.templateShowAddress,
       showCoordinates: _settings.templateShowCoordinates,
       showCompass: _settings.templateShowCompass,
       showDateTime: _settings.templateShowDateTime,
       mapType: _settings.templateMapType,
       dateFormat: _settings.templateDateFormat,
-      isManualLocation: isManual,
+      isManualLocation: false, // Never show "MANUAL" badge in live preview
     );
   }
 

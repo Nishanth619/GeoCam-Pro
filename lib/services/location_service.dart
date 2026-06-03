@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'settings_service.dart';
 
@@ -56,6 +57,54 @@ class LocationService {
     _manualOverridePosition = null;
     _manualOverrideAddress = null;
     debugPrint('📍 Manual location override cleared — returning to GPS');
+  }
+
+  // ============= Manual Date/Time Override =============
+  // When set, photos are stamped with this date/time instead of DateTime.now().
+  DateTime? _manualDateTime;
+
+  static const String _keyManualDateTime = 'manual_datetime_override';
+
+  /// Load persisted manual datetime from SharedPreferences on startup.
+  Future<void> loadPersistedDateTime() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final stored = prefs.getString(_keyManualDateTime);
+      if (stored != null) {
+        _manualDateTime = DateTime.tryParse(stored);
+        debugPrint('🕐 Loaded persisted manual datetime: $_manualDateTime');
+      }
+    } catch (e) {
+      debugPrint('🕐 Could not load persisted datetime: $e');
+    }
+  }
+
+  /// True when the user has set a custom capture date/time.
+  bool get isManualDateTimeActive => _manualDateTime != null;
+
+  /// The manually set date/time override.
+  DateTime? get manualDateTime => _manualDateTime;
+
+  /// Returns the manual date/time if set, otherwise the current system time.
+  DateTime get effectiveDateTime => _manualDateTime ?? DateTime.now();
+
+  /// Sets a custom date/time that will be stamped on the next captured photo.
+  void setManualDateTime(DateTime dt) {
+    _manualDateTime = dt;
+    debugPrint('🕐 Manual date/time override set: $dt');
+    // Persist immediately so it survives any state transitions.
+    SharedPreferences.getInstance().then(
+      (prefs) => prefs.setString(_keyManualDateTime, dt.toIso8601String()),
+    );
+  }
+
+  /// Clears the manual date/time override and returns to system time.
+  void clearManualDateTime() {
+    _manualDateTime = null;
+    debugPrint('🕐 Manual date/time override cleared — returning to system time');
+    SharedPreferences.getInstance().then(
+      (prefs) => prefs.remove(_keyManualDateTime),
+    );
   }
 
   // Offline geocoding cache (store last 100 lookups)

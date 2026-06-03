@@ -61,9 +61,19 @@ class _TemplateCustomizationSheetState extends State<TemplateCustomizationSheet>
     _adService.showInterstitialAd();
     messenger.showSnackBar(
       SnackBar(
-        content: Text(AppLocalizations.of(context)!.templateSettingsApplied),
+        content: Text(
+          AppLocalizations.of(context)!.templateSettingsApplied,
+          style: const TextStyle(
+            color: Color(0xFF0F1A24),
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+          ),
+        ),
         backgroundColor: AppColors.primary,
         behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
@@ -251,7 +261,7 @@ class _TemplateCustomizationSheetState extends State<TemplateCustomizationSheet>
               
               // Hybrid (Index 3) is FREE by default
               // All others are locked if premium is not active
-              if (index != 3 && !_settings.isPremiumUnlocked) {
+              if (index != 3 && !_settings.hasFeatureAccess) {
                 _showAdUnlockDialog(index);
                 return;
               }
@@ -295,7 +305,7 @@ class _TemplateCustomizationSheetState extends State<TemplateCustomizationSheet>
                           size: 26,
                         ),
                         // Lock icon for non-free styles if not unlocked
-                        if (index != 3 && !_settings.isPremiumUnlocked)
+                        if (index != 3 && !_settings.hasFeatureAccess)
                           Positioned(
                             right: -8,
                             top: -8,
@@ -360,13 +370,37 @@ class _TemplateCustomizationSheetState extends State<TemplateCustomizationSheet>
             _selectedMapType = index;
           });
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(AppLocalizations.of(context)!.templatePremiumUnlocked)),
+            SnackBar(
+              content: Text(
+                AppLocalizations.of(context)!.templatePremiumUnlocked,
+                style: const TextStyle(
+                  color: Color(0xFF0F1A24),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+              ),
+              backgroundColor: AppColors.primary,
+              behavior: SnackBarBehavior.floating,
+              margin: const EdgeInsets.all(16),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
           );
         },
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)!.templateAdNotReady)),
+        SnackBar(
+          content: Text(
+            AppLocalizations.of(context)!.templateAdNotReady,
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+          ),
+          backgroundColor: const Color(0xFF1A2332),
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
+        ),
       );
     }
   }

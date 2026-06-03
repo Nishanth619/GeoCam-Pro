@@ -28,6 +28,9 @@ class GpsHudCard extends StatelessWidget {
   /// When true an amber "MANUAL" badge is shown instead of the verified icon.
   final bool isManualLocation;
 
+  /// When true an amber "CUSTOM TIME" badge is shown next to the date/time row.
+  final bool isManualDateTime;
+
 
 
   const GpsHudCard({
@@ -50,6 +53,7 @@ class GpsHudCard extends StatelessWidget {
     this.dateFormat = 'DD/MM/YYYY',
     this.isLandscape = false,
     this.isManualLocation = false,
+    this.isManualDateTime = false,
   });
 
   @override
@@ -157,12 +161,15 @@ class GpsHudCard extends StatelessWidget {
                     children: [
                       const Icon(Icons.my_location, color: AppColors.primary, size: 10),
                       const SizedBox(width: 3),
-                      Text(
-                        coordinates,
-                        style: TextStyle(
-                          fontSize: isLandscape ? 8 : 9,
-                          fontFamily: 'monospace',
-                          color: Colors.white70,
+                      Flexible(
+                        child: Text(
+                          coordinates,
+                          style: TextStyle(
+                            fontSize: isLandscape ? 8 : 9,
+                            fontFamily: 'monospace',
+                            color: Colors.white70,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
@@ -173,15 +180,52 @@ class GpsHudCard extends StatelessWidget {
                 if (showDateTime)
                   Row(
                     children: [
-                      const Icon(Icons.calendar_today, color: Colors.white38, size: 9),
+                      Icon(
+                        isManualDateTime
+                            ? Icons.edit_calendar
+                            : Icons.calendar_today,
+                        color: isManualDateTime
+                            ? const Color(0xFFF59E0B)
+                            : Colors.white38,
+                        size: 9,
+                      ),
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
                           '$dateStr \u2022 $timeStr',
-                          style: TextStyle(fontSize: isLandscape ? 8 : 9, color: Colors.white60),
+                          style: TextStyle(
+                            fontSize: isLandscape ? 8 : 9,
+                            color: isManualDateTime
+                                ? const Color(0xFFF59E0B)
+                                : Colors.white60,
+                          ),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
+                      // CUSTOM TIME badge
+                      if (isManualDateTime)
+                        Container(
+                          margin: const EdgeInsets.only(left: 4),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF59E0B).withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(3),
+                            border: Border.all(
+                              color: const Color(0xFFF59E0B).withValues(alpha: 0.5),
+                              width: 0.8,
+                            ),
+                          ),
+                          child: const Text(
+                            'CUSTOM',
+                            style: TextStyle(
+                              fontSize: 6,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.4,
+                              color: Color(0xFFF59E0B),
+                            ),
+                          ),
+                        ),
                     ],
                   ),
 
@@ -191,10 +235,10 @@ class GpsHudCard extends StatelessWidget {
                 Row(
                   children: [
                     _HudStat(icon: Icons.landscape_outlined, value: altitude),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 8),
                     _HudStat(icon: Icons.wb_sunny_outlined, value: temperature),
                     const Spacer(),
-                    _buildGpsSignalIndicator(),
+                    Flexible(child: _buildGpsSignalIndicator()),
                   ],
                 ),
 
@@ -358,12 +402,15 @@ class _HudStat extends StatelessWidget {
       children: [
         Icon(icon, size: 10, color: AppColors.primary),
         const SizedBox(width: 4),
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.w600,
-            color: Colors.white,
+        Flexible(
+          child: Text(
+            value,
+            style: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],

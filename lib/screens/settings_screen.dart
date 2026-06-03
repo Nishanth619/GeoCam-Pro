@@ -107,7 +107,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.settingsAllPhotosDeleted)),
+          SnackBar(
+            content: Text(
+              l10n.settingsAllPhotosDeleted,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            backgroundColor: const Color(0xFF1A2332),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(16),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12)),
+          ),
         );
       }
     }
@@ -135,9 +148,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (filePath != null && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(l10n.settingsExportedTo(format.toUpperCase())),
+          content: Text(
+            l10n.settingsExportedTo(format.toUpperCase()),
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          backgroundColor: const Color(0xFF1A2332),
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
           action: SnackBarAction(
             label: l10n.settingsShareAction,
+            textColor: AppColors.primary,
             onPressed: () => Share.shareXFiles([XFile(filePath!)]),
           ),
         ),
@@ -145,8 +170,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(_photoCount == 0 ? l10n.settingsNoPhotosExport : l10n.settingsExportFailed),
-          backgroundColor: Colors.red,
+          content: Text(
+            _photoCount == 0
+                ? l10n.settingsNoPhotosExport
+                : l10n.settingsExportFailed,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          backgroundColor: Colors.red[800],
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
         ),
       );
     }
@@ -352,10 +389,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _SettingsTile(
                 icon: Icons.file_download_outlined,
                 title: l10n.settingsExportGpsData,
-                subtitle: l10n.settingsExportGpsSubtitle,
-                trailing: const Icon(Icons.chevron_right, color: AppColors.primary),
+                subtitle: _settings.hasFeatureAccess
+                    ? l10n.settingsExportGpsSubtitle
+                    : 'PRO feature — upgrade to export',
+                trailing: _settings.hasFeatureAccess
+                    ? const Icon(Icons.chevron_right, color: AppColors.primary)
+                    : const Icon(Icons.lock_rounded, color: AppColors.primary, size: 20),
                 iconColor: AppColors.primary,
-                onTap: _photoCount > 0 ? _showExportOptions : null,
+                onTap: _photoCount > 0
+                    ? () {
+                        if (_settings.hasFeatureAccess) {
+                          _showExportOptions();
+                        } else {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const PremiumScreen(),
+                            ),
+                          ).then((_) => setState(() {}));
+                        }
+                      }
+                    : null,
               ),
               _SettingsTile(
                 icon: Icons.delete_sweep_outlined,
@@ -426,7 +480,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _SettingsTile(
                 icon: Icons.verified_user_outlined,
                 title: l10n.settingsAppVersion,
-                subtitle: '1.0.5 PRO',
+                subtitle: '1.0.7 PRO',
               ),
               
               const SizedBox(height: 100),

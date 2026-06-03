@@ -71,3 +71,21 @@ android {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // ─── AdMob Mediation Adapters + their full SDKs ───────────────────────────
+    // Each entry has TWO lines: the Google adapter (bridge) + the actual SDK.
+    // R8 minification requires both to be present at build time.
+
+    // Meta Audience Network
+    implementation("com.google.ads.mediation:facebook:6.18.0.0")
+    implementation("com.facebook.android:audience-network-sdk:6.18.0")
+
+    // AppLovin
+    implementation("com.google.ads.mediation:applovin:13.0.1.0")
+    implementation("com.applovin:applovin-sdk:13.0.1")
+
+    // Unity Ads
+    implementation("com.google.ads.mediation:unity:4.12.3.0")
+    implementation("com.unity3d.ads:unity-ads:4.12.3")
+}
