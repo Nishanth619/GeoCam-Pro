@@ -2,6 +2,19 @@
 
 **Professional GPS Camera for Site Documentation & Field Reporting**
 
+## 📸 Screenshots
+
+<p align="center">
+  <img src="screenshots/image1.png" width="250" />
+  <img src="screenshots/image2.png" width="250" />
+  <img src="screenshots/image3.png" width="250" />
+</p>
+<p align="center">
+  <img src="screenshots/image4.png" width="250" />
+  <img src="screenshots/image5.png" width="250" />
+  <img src="screenshots/image6.png" width="250" />
+</p>
+
 ## 📑 Table of Contents
 - [Project Overview](#-project-overview)
 - [Problem Statement](#-problem-statement)
