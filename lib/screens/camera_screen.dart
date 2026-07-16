@@ -141,12 +141,17 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       _cameraService.dispose();
     } else if (state == AppLifecycleState.resumed) {
       _initializeCamera(silent: true);
+      // If location was never started (e.g. user granted permission via Settings
+      // after first-launch denial), restart it now.
+      if (_positionSubscription == null) {
+        _startLocationUpdates();
+      }
     }
   }
 
   Future<void> _initializeAll() async {
-    await _initializeCamera();
-    _startLocationUpdates();
+    await _initializeCamera(); // requests camera permission internally
+    await _startLocationUpdates(); // requests location permission internally
     _loadLastPhoto();
   }
 
@@ -224,12 +229,15 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     // If silent && failed: do nothing — camera will look frozen but no scary red screen
   }
 
-  void _startLocationUpdates() async {
-    // Check permission first
+  Future<void> _startLocationUpdates() async {
+    // Request permission — on a fresh install it may not be granted yet.
     final hasPermission = await _permissionService.hasLocationPermission();
     if (!hasPermission) {
-      debugPrint('Location permission not granted');
-      return;
+      final granted = await _permissionService.requestLocationPermission();
+      if (!granted) {
+        debugPrint('Location permission denied — GPS HUD will be empty.');
+        return;
+      }
     }
 
     // 1. STAGE 1: Instant Last Known Position (Non-blocking)
