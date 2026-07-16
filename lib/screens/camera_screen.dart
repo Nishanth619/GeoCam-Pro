@@ -5,14 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:image/image.dart' as img;
 
 import 'package:sensors_plus/sensors_plus.dart';
 import '../theme/app_theme.dart';
 import '../widgets/gps_hud_card.dart';
 import '../widgets/zoom_slider.dart';
-import '../widgets/soft_paywall_banner.dart';
 import '../services/ad_service.dart';
 import '../services/camera_service.dart';
 import '../services/location_service.dart';
@@ -176,13 +174,32 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       });
     }
 
-    // Check permissions — only request them in non-silent mode
-    final hasCamera = await _permissionService.hasCameraPermission();
-    final hasStorage = await _permissionService.hasMediaPermission();
-    
+    // ── Permission gate ───────────────────────────────────────────────────────
+    // ALWAYS request permissions before init (not just when denied).
+    // On a fresh release install the permission is not yet granted and the
+    // camera driver returns a grey texture if opened before Android has
+    // propagated the grant. We await the dialog result first.
     if (!silent) {
-      if (!hasCamera) await _permissionService.requestCameraPermission();
-      if (!hasStorage) await _permissionService.requestMediaPermission();
+      final cameraGranted = await _permissionService.requestCameraPermission();
+      await _permissionService.requestMediaPermission();
+
+      if (!cameraGranted) {
+        // User denied camera — show error immediately, no point initialising.
+        if (mounted) {
+          setState(() {
+            _isCameraInitializing = false;
+            _cameraError =
+                'Camera permission is required.\nPlease enable it in Settings.';
+          });
+        }
+        return;
+      }
+
+      // Give Android ~300 ms to propagate the newly-granted camera permission
+      // to the camera HAL before we open the device.  Without this delay some
+      // devices (especially Xiaomi / MIUI) open the camera before the driver
+      // has finished registering the grant and return a grey preview.
+      await Future.delayed(const Duration(milliseconds: 300));
     }
 
     // Camera service already has 3-attempt retry logic internally
@@ -1015,15 +1032,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         ],
       ),
     );
-  }
-
-  String _formatDebugDateTime(DateTime dt) {
-    final d = dt.day.toString().padLeft(2, '0');
-    final m = dt.month.toString().padLeft(2, '0');
-    final y = dt.year.toString();
-    final h = dt.hour.toString().padLeft(2, '0');
-    final min = dt.minute.toString().padLeft(2, '0');
-    return '$d/$m/$y $h:$min';
   }
 
   void _openEditLocation() {
