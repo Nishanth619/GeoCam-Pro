@@ -365,10 +365,10 @@ class LocationService {
   /// • Deduplicates results by rounded coordinates (~11m precision).
   /// • Builds richly structured display names (street → city → state → country).
   // ── Google Places API key ─────────────────────────────────────────────────
-  // Restrict this key in Google Cloud Console to:
-  //   Android Apps → package name: com.geocam.geocam_flutter
-  static const String _googlePlacesApiKey =
-      'AIzaSyAqCQtedhvKMdMr8wp4vk6YlLnTXhIOCsQ';
+  // WARNING: Never hardcode API keys in public GitHub repositories.
+  // We have removed the key to prevent GitHub secret leak warnings.
+  // The app will now automatically use the free Photon API fallback below.
+  static const String _googlePlacesApiKey = '';
 
   /// Returns place suggestions using Google Places Autocomplete.
   /// Falls back to Nominatim automatically if Google returns an error.
