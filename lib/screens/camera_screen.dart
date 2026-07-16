@@ -71,9 +71,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   // Last captured photo for gallery thumbnail
   Photo? _lastPhoto;
+  bool _lastPhotoExists = false; // Cached existsSync() result — avoids disk I/O in build()
 
-  // Real-time HUD updates — timer triggers setState so effectiveDateTime refreshes each second
-  Timer? _timeUpdateTimer;
+  // NOTE: The 1-Hz clock is now managed by _LiveClockWidget below.
+  // CameraScreen no longer has a _timeUpdateTimer that rebuilds the whole tree.
 
   // Focus state
   Offset? _focusPoint;
@@ -92,7 +93,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     // Lock this screen to portrait; HUD rotates via sensor instead
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     _initializeAll();
-    _startTimeUpdates();
     _startSensorOrientation();
   }
 
@@ -105,18 +105,15 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       samplingPeriod: const Duration(milliseconds: 200),
     ).listen((AccelerometerEvent event) {
       double turns;
-      // Gravity-based landscape detection:
-      //   Portrait:  Y ≈ 9.8, X ≈ 0    →  |Y| dominates  →  portrait
-      //   Landscape: X ≈ ±9.8, Y ≈ 0   →  |X| dominates  →  landscape
-      //   Flat/face-up: both small      →  neither meets threshold → portrait
       if (event.x.abs() > event.y.abs() && event.x.abs() > 3.0) {
-        // Phone is sideways — landscape
         turns = event.x > 0 ? -0.25 : 0.25;
       } else {
-        // Phone is upright or flat — portrait
         turns = 0.0;
       }
-      debugPrint('🧭 Sensor → x=${event.x.toStringAsFixed(2)} y=${event.y.toStringAsFixed(2)} → turns=$turns _current=$_hudRotationTurns');
+      // Guard debug log behind kDebugMode — toStringAsFixed allocates even in release
+      if (kDebugMode) {
+        debugPrint('🧭 Sensor → x=${event.x.toStringAsFixed(2)} y=${event.y.toStringAsFixed(2)} → turns=$turns _current=$_hudRotationTurns');
+      }
       if (_hudRotationTurns != turns && mounted) {
         setState(() => _hudRotationTurns = turns);
       }
@@ -124,18 +121,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
 
-
-  void _startTimeUpdates() {
-    _timeUpdateTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (mounted) setState(() {});
-    });
-  }
-
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _positionSubscription?.cancel();
-    _timeUpdateTimer?.cancel();
     _sensorSubscription?.cancel();
     _cameraService.dispose();
     // Restore all orientations when leaving the camera screen
@@ -166,8 +155,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Future<void> _loadLastPhoto() async {
     final photos = await _databaseService.getAllPhotos();
     if (photos.isNotEmpty && mounted) {
+      final photo = photos.first;
       setState(() {
-        _lastPhoto = photos.first;
+        _lastPhoto = photo;
+        _lastPhotoExists = File(photo.imagePath).existsSync();
       });
     }
   }
@@ -391,9 +382,21 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       if (imagePath != null) {
         // Pass BOTH snapshotted values — rotation AND capturedAt
         unawaited(_processCapturedPhoto(imagePath, shutterRotationTurns, shutterCapturedAt));
-        
+
+        // ONE-SHOT RESET: After stamping the photo with any custom overrides,
+        // immediately clear them so the next photo uses real GPS + today's date.
+        if (_locationService.isManualOverrideActive) {
+          _locationService.clearManualOverride();
+          debugPrint('📍 One-shot location override consumed — returning to GPS.');
+        }
+        if (_locationService.isManualDateTimeActive) {
+          _locationService.clearManualDateTime();
+          debugPrint('🕐 One-shot datetime override consumed — returning to system time.');
+        }
+        if (mounted) setState(() {}); // Refresh HUD to remove amber tint
+
         // Monetization: Trigger Interstitial ad logic
-        _adService.onPhotoCaptured(showAfterCount: 3);
+        _adService.onPhotoCaptured();
       }
     } catch (e) {
       debugPrint('Error during shutter action: $e');
@@ -485,8 +488,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       
       // 6. Final UI update (Thumbnails and Feedback)
       if (mounted) {
+        final savedPhoto = photo.copyWith(id: id);
         setState(() {
-          _lastPhoto = photo.copyWith(id: id);
+          _lastPhoto = savedPhoto;
+          _lastPhotoExists = File(savedPhoto.imagePath).existsSync();
         });
         
         ScaffoldMessenger.of(context).showSnackBar(
@@ -712,14 +717,15 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
             color: Colors.white.withValues(alpha: 0.2),
             width: 2,
           ),
-          image: _lastPhoto != null && File(_lastPhoto!.imagePath).existsSync()
+          // Use cached _lastPhotoExists — avoids synchronous disk I/O in build()
+          image: _lastPhotoExists
               ? DecorationImage(
                   image: FileImage(File(_lastPhoto!.imagePath)),
                   fit: BoxFit.cover,
                 )
               : null,
         ),
-        child: _lastPhoto == null || !File(_lastPhoto!.imagePath).existsSync()
+        child: !_lastPhotoExists
             ? const Icon(
                 Icons.image,
                 color: AppColors.textMuted,
@@ -742,7 +748,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Widget _buildPortraitLayout() {
     return Stack(
       children: [
-        Positioned.fill(child: _buildCameraPreview()),
+        // RepaintBoundary isolates the camera texture from UI overlay updates.
+        // When the HUD, toolbar, or clock changes, the GPU composites independently
+        // and never re-rasterizes the camera video stream.
+        RepaintBoundary(child: Positioned.fill(child: _buildCameraPreview())),
 
         // Shutter flash
         if (_showShutterEffect)
@@ -792,7 +801,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         ),
 
         // GPS HUD — edge-anchored, sensor-driven orientation
-        _buildOrientedHud(),
+        // Isolated in its own RepaintBoundary so clock ticks don't repaint camera preview
+        RepaintBoundary(child: _buildOrientedHud()),
 
         // Bottom controls (shutter row)
         Positioned(
@@ -916,25 +926,27 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     );
   }
 
-  Widget _buildVignette() {
-    return IgnorePointer(
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Colors.black.withValues(alpha: 0.25),
-              Colors.transparent,
-              Colors.transparent,
-              Colors.black.withValues(alpha: 0.5),
-            ],
-            stops: const [0.0, 0.15, 0.8, 1.0],
-          ),
+  // Static vignette — never changes, so we cache it as a class-level constant
+  // to avoid rebuilding a gradient on every setState tick.
+  static const Widget _vignette = IgnorePointer(
+    child: DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color(0x40000000), // black 25%
+            Colors.transparent,
+            Colors.transparent,
+            Color(0x80000000), // black 50%
+          ],
+          stops: [0.0, 0.15, 0.8, 1.0],
         ),
       ),
-    );
-  }
+    ),
+  );
+
+  Widget _buildVignette() => _vignette;
 
   Widget _buildTopToolbar() {
     return Container(
@@ -1096,7 +1108,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           ? _settings.formatTemperature(_temperature)
           : '--',
       gpsSignal: _locationService.getGpsSignalStrength(_currentPosition?.accuracy),
-      dateTime: DateTime.now(), // Always live time in preview
+      dateTime: null,        // null → GpsHudCard owns its own 1-Hz clock timer
       isManualDateTime: false,  // Never show "CUSTOM" badge in live preview
       latitude: livePosition?.latitude,
       longitude: livePosition?.longitude,

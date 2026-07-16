@@ -218,21 +218,21 @@ class LocationService {
       if (Platform.isAndroid) {
         locationSettings = AndroidSettings(
           accuracy: LocationAccuracy.best,
-          distanceFilter: 0, // Update on any movement
+          distanceFilter: 2, // Only update after 2m of movement (eliminates micro-jitter)
           forceLocationManager: false, // Use Fused Location Provider
           intervalDuration: const Duration(seconds: 1),
         );
       } else if (Platform.isIOS) {
         locationSettings = AppleSettings(
           accuracy: LocationAccuracy.best,
-          distanceFilter: 0,
+          distanceFilter: 2,
           pauseLocationUpdatesAutomatically: false,
           activityType: ActivityType.other,
         );
       } else {
         locationSettings = const LocationSettings(
           accuracy: LocationAccuracy.best,
-          distanceFilter: 0,
+          distanceFilter: 2,
         );
       }
       
@@ -364,90 +364,173 @@ class LocationService {
   /// • 8-second network timeout prevents UI hangs on slow connections.
   /// • Deduplicates results by rounded coordinates (~11m precision).
   /// • Builds richly structured display names (street → city → state → country).
+  // ── Google Places API key ─────────────────────────────────────────────────
+  // Restrict this key in Google Cloud Console to:
+  //   Android Apps → package name: com.geocam.geocam_flutter
+  static const String _googlePlacesApiKey =
+      'AIzaSyAqCQtedhvKMdMr8wp4vk6YlLnTXhIOCsQ';
+
+  /// Returns place suggestions using Google Places Autocomplete.
+  /// Falls back to Nominatim automatically if Google returns an error.
   Future<List<Map<String, dynamic>>> getAddressSuggestions(String query) async {
     if (query.trim().length < 2) return [];
 
-    try {
-      final appLang = SettingsService().appLanguage;
-      final langCode = appLang == 'auto' || appLang == 'tl' ? 'en' : appLang;
+    final appLang = SettingsService().appLanguage;
+    final langCode = appLang == 'auto' || appLang == 'tl' ? 'en' : appLang;
 
+    // ── Try Google Places first ───────────────────────────────────────────────
+    try {
       final url = Uri.parse(
-        'https://photon.komoot.io/api/?q=${Uri.encodeComponent(query.trim())}&limit=10&lang=$langCode',
+        'https://maps.googleapis.com/maps/api/place/autocomplete/json'
+        '?input=${Uri.encodeComponent(query.trim())}'
+        '&language=$langCode'
+        '&key=$_googlePlacesApiKey',
+      );
+
+      final response = await http.get(url).timeout(const Duration(seconds: 8));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body) as Map<String, dynamic>;
+        final status = data['status'] as String? ?? '';
+
+        if (status == 'OK') {
+          final predictions = (data['predictions'] as List<dynamic>? ?? []);
+          final results = <Map<String, dynamic>>[];
+          for (final item in predictions) {
+            final description = item['description'] as String? ?? '';
+            final placeId = item['place_id'] as String? ?? '';
+            if (description.isEmpty || placeId.isEmpty) continue;
+            results.add({
+              'display_name': description,
+              'place_id': placeId,
+              'lat': null,
+              'lon': null,
+            });
+            if (results.length >= 6) break;
+          }
+          if (results.isNotEmpty) return results;
+        } else {
+          // Log actual Google error so we can diagnose in release logs
+          debugPrint('⚠️ Google Places status: $status — falling back to Nominatim');
+        }
+      }
+    } on TimeoutException {
+      debugPrint('⚠️ Google Places timed out — falling back to Nominatim');
+    } catch (e) {
+      debugPrint('⚠️ Google Places error: $e — falling back to Nominatim');
+    }
+
+    // ── Fallback: Photon (Komoot) API ────────────────────────────────────────
+    // A completely free, robust geocoder built on OpenStreetMap data.
+    // Unlike Nominatim, it does NOT have a strict 1-req/sec limit and is
+    // highly optimized for autocomplete/search-as-you-type.
+    try {
+      final url = Uri.parse(
+        'https://photon.komoot.io/api/'
+        '?q=${Uri.encodeComponent(query.trim())}'
+        '&limit=8'
+        '&lang=${langCode == 'en' ? 'en' : 'default'}', // Photon supports en, de, fr, it
       );
 
       final response = await http
           .get(url, headers: {
-            'User-Agent': 'GeocamPro/1.0 (geocam.app)',
+            'User-Agent': 'GeocamPro/1.0 (contact@geocam.app)',
             'Accept-Language': '$langCode,en;q=0.9',
           })
-          .timeout(const Duration(seconds: 8));
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode != 200) return [];
 
       final data = json.decode(response.body) as Map<String, dynamic>;
-      final List<dynamic> features = data['features'] ?? [];
-
+      final features = data['features'] as List<dynamic>? ?? [];
       final seen = <String>{};
       final results = <Map<String, dynamic>>[];
 
-      for (final item in features) {
-        final props = (item['properties'] ?? {}) as Map<String, dynamic>;
-        final geometry = item['geometry'];
-        if (geometry == null) continue;
-        final coords = geometry['coordinates'];
-        if (coords == null || coords is! List || coords.length < 2) continue;
-
-        final lat = (coords[1] as num).toDouble();
+      for (final f in features) {
+        final props = f['properties'] as Map<String, dynamic>? ?? {};
+        final geom = f['geometry'] as Map<String, dynamic>? ?? {};
+        
+        final coords = geom['coordinates'] as List<dynamic>? ?? [0.0, 0.0];
+        if (coords.length < 2) continue;
+        
         final lon = (coords[0] as num).toDouble();
+        final lat = (coords[1] as num).toDouble();
 
-        // Deduplicate by rounded coordinate key (~11m grid)
         final key = '${lat.toStringAsFixed(4)},${lon.toStringAsFixed(4)}';
         if (seen.contains(key)) continue;
         seen.add(key);
 
-        // Build a rich display name: most specific → least specific
-        final street  = props['street']  as String? ?? '';
-        final housenr = props['housenumber'] as String? ?? '';
-        final name    = props['name']    as String? ?? '';
-        final district= props['district'] as String? ?? '';
-        final city    = (props['city'] ?? props['town'] ?? props['village'] ?? '') as String;
-        final state   = props['state']   as String? ?? '';
+        final name = props['name'] as String? ?? '';
+        final city = props['city'] as String? ?? '';
+        final state = props['state'] as String? ?? '';
         final country = props['country'] as String? ?? '';
 
-        // First part: most specific label
-        final primary = [
-          if (housenr.isNotEmpty && street.isNotEmpty) '$housenr $street'
-          else if (street.isNotEmpty) street
-          else if (name.isNotEmpty) name,
-        ].join();
-
-        final parts = <String>[
-          if (primary.isNotEmpty) primary,
-          if (district.isNotEmpty && district != city) district,
-          if (city.isNotEmpty) city,
-          if (state.isNotEmpty && state != city) state,
-          if (country.isNotEmpty) country,
-        ];
-
-        // Preserve insertion order — no Set (we already dedup by coords)
-        final displayName = parts.isEmpty ? 'Unknown Location' : parts.join(', ');
+        // Build a nice display name: "Name, City, State, Country"
+        final parts = [name, city, state, country]
+            .where((p) => p.isNotEmpty)
+            .toSet() // remove duplicates like "London, London"
+            .toList();
+            
+        final displayName = parts.join(', ').trim();
+        if (displayName.isEmpty) continue;
 
         results.add({
           'display_name': displayName,
           'lat': lat,
           'lon': lon,
         });
-
-        if (results.length >= 6) break; // cap at 6 clean results
+        if (results.length >= 6) break;
       }
-
       return results;
     } on TimeoutException {
-      debugPrint('Address suggestion request timed out');
+      debugPrint('Photon fallback timed out');
       return [];
     } catch (e) {
-      debugPrint('Error getting address suggestions: $e');
+      debugPrint('Error in Photon fallback: $e');
       return [];
+    }
+  }
+
+  /// Resolves a Google place_id to precise lat/lng coordinates.
+  /// Called when the user taps a suggestion from the autocomplete list.
+  Future<Map<String, dynamic>?> getPlaceCoordinates(String placeId) async {
+    try {
+      final url = Uri.parse(
+        'https://maps.googleapis.com/maps/api/place/details/json'
+        '?place_id=${Uri.encodeComponent(placeId)}'
+        '&fields=geometry,formatted_address'
+        '&key=$_googlePlacesApiKey',
+      );
+
+      final response = await http
+          .get(url)
+          .timeout(const Duration(seconds: 8));
+
+      if (response.statusCode != 200) return null;
+
+      final data = json.decode(response.body) as Map<String, dynamic>;
+      final status = data['status'] as String? ?? '';
+      if (status != 'OK') {
+        debugPrint('⚠️ Places Details error: $status');
+        return null;
+      }
+
+      final result = data['result'] as Map<String, dynamic>? ?? {};
+      final location = (result['geometry'] as Map<String, dynamic>?)?['location']
+          as Map<String, dynamic>?;
+      if (location == null) return null;
+
+      return {
+        'lat': (location['lat'] as num).toDouble(),
+        'lon': (location['lng'] as num).toDouble(),
+        'formatted_address': result['formatted_address'] as String? ?? '',
+      };
+    } on TimeoutException {
+      debugPrint('Places Details request timed out');
+      return null;
+    } catch (e) {
+      debugPrint('Error getting place coordinates: $e');
+      return null;
     }
   }
 

@@ -480,7 +480,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _SettingsTile(
                 icon: Icons.verified_user_outlined,
                 title: l10n.settingsAppVersion,
-                subtitle: '1.0.7 PRO',
+                subtitle: '1.0.9 PRO',
               ),
               
               const SizedBox(height: 100),

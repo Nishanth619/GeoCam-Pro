@@ -20,6 +20,10 @@ class CameraService {
   FlashMode _currentFlashMode = FlashMode.off;
   Future<bool>? _initFuture;
 
+  // Cached zoom range — fetched once after init, never changes during a session.
+  double _cachedMinZoom = 1.0;
+  double _cachedMaxZoom = 1.0;
+
   CameraController? get controller => _controller;
   bool get isInitialized => _isInitialized;
   List<CameraDescription>? get cameras => _cameras;
@@ -106,6 +110,16 @@ class CameraService {
       }
       
       _isInitialized = true;
+
+      // Cache zoom range once — never changes during a session.
+      try {
+        _cachedMinZoom = await _controller!.getMinZoomLevel();
+        _cachedMaxZoom = await _controller!.getMaxZoomLevel();
+      } catch (_) {
+        _cachedMinZoom = 1.0;
+        _cachedMaxZoom = 1.0;
+      }
+
       debugPrint('Camera initialized successfully');
       return true;
     } on CameraException catch (e) {
@@ -202,9 +216,8 @@ class CameraService {
   Future<void> setZoom(double zoom) async {
     if (_controller == null || !_isInitialized) return;
     try {
-      final minZoom = await _controller!.getMinZoomLevel();
-      final maxZoom = await _controller!.getMaxZoomLevel();
-      final targetZoom = minZoom + (maxZoom - minZoom) * zoom.clamp(0.0, 1.0);
+      // Use cached min/max — avoids 2 platform round-trips on every drag event
+      final targetZoom = _cachedMinZoom + (_cachedMaxZoom - _cachedMinZoom) * zoom.clamp(0.0, 1.0);
       await _controller!.setZoomLevel(targetZoom);
     } catch (e) {
       debugPrint('Error setting zoom: $e');
@@ -214,13 +227,8 @@ class CameraService {
   /// Get min and max zoom levels
   Future<(double, double)> getZoomLevels() async {
     if (_controller == null || !_isInitialized) return (1.0, 1.0);
-    try {
-      final minZoom = await _controller!.getMinZoomLevel();
-      final maxZoom = await _controller!.getMaxZoomLevel();
-      return (minZoom, maxZoom);
-    } catch (e) {
-      return (1.0, 1.0);
-    }
+    // Use cached values — no platform round-trips needed
+    return (_cachedMinZoom, _cachedMaxZoom);
   }
 
   /// Set focus point (normalized coordinates 0.0 to 1.0)

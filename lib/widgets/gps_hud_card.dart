@@ -1,10 +1,20 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
 
-class GpsHudCard extends StatelessWidget {
+/// GPS HUD card displayed on the camera preview.
+///
+/// Performance design:
+/// - Converted to [StatefulWidget] so it owns its 1-Hz clock timer.
+/// - When [dateTime] is null the card uses a self-managed live clock.
+///   Only the tiny date/time text row rebuilds every second — the parent
+///   camera screen is never woken up for clock ticks.
+/// - When [dateTime] is provided (e.g. for watermark preview) the clock
+///   is static and no timer is created.
+class GpsHudCard extends StatefulWidget {
   final String address;
   final String coordinates;
   final String altitude;
@@ -13,6 +23,8 @@ class GpsHudCard extends StatelessWidget {
   final double? latitude;
   final double? longitude;
   final double? heading;
+  /// Pass null to use a self-managed live clock (camera preview mode).
+  /// Pass a specific DateTime for static display (watermark preview, etc.).
   final DateTime? dateTime;
   final VoidCallback? onMapTap;
 
@@ -30,8 +42,6 @@ class GpsHudCard extends StatelessWidget {
 
   /// When true an amber "CUSTOM TIME" badge is shown next to the date/time row.
   final bool isManualDateTime;
-
-
 
   const GpsHudCard({
     super.key,
@@ -57,22 +67,47 @@ class GpsHudCard extends StatelessWidget {
   });
 
   @override
+  State<GpsHudCard> createState() => _GpsHudCardState();
+}
+
+class _GpsHudCardState extends State<GpsHudCard> {
+  Timer? _clockTimer;
+  DateTime _now = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    // Only start a timer when the caller wants a live clock (dateTime == null).
+    // This avoids any timer overhead when the card is used statically.
+    if (widget.dateTime == null) {
+      _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) setState(() => _now = DateTime.now());
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _clockTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return _buildPortraitHud();
   }
 
   // ─── PORTRAIT HUD (full card with tall mini map on the right) ───────────────
   Widget _buildPortraitHud() {
-    final displayDate = dateTime ?? DateTime.now();
-
+    // Use caller-supplied datetime (static) or our self-managed live clock.
+    final displayDate = widget.dateTime ?? _now;
 
     final timeStr = DateFormat('hh:mm a').format(displayDate);
     final dateStr = DateFormat('EEEE, dd/MM/yyyy').format(displayDate);
 
-
     return Container(
-      margin: EdgeInsets.symmetric(horizontal: 10, vertical: isLandscape ? 1 : 3),
-      padding: EdgeInsets.all(isLandscape ? 6 : 8),
+      margin: EdgeInsets.symmetric(horizontal: 10, vertical: widget.isLandscape ? 1 : 3),
+      padding: EdgeInsets.all(widget.isLandscape ? 6 : 8),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.7),
         borderRadius: BorderRadius.circular(16),
@@ -102,9 +137,9 @@ class GpsHudCard extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        _getShortAddress(address),
+                        _getShortAddress(widget.address),
                         style: TextStyle(
-                          fontSize: isLandscape ? 11 : 12,
+                          fontSize: widget.isLandscape ? 11 : 12,
                           fontWeight: FontWeight.bold,
                           color: Colors.white,
                           letterSpacing: 0.1,
@@ -113,7 +148,7 @@ class GpsHudCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    if (isManualLocation)
+                    if (widget.isManualLocation)
                       Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 5, vertical: 2),
@@ -137,17 +172,17 @@ class GpsHudCard extends StatelessWidget {
                     else
                       Icon(Icons.verified,
                           color: AppColors.primary,
-                          size: isLandscape ? 12 : 14),
+                          size: widget.isLandscape ? 12 : 14),
                   ],
                 ),
                 const SizedBox(height: 2),
 
                 // Detailed Address
-                if (showAddress)
+                if (widget.showAddress)
                   Text(
-                    address,
+                    widget.address,
                     style: TextStyle(
-                      fontSize: isLandscape ? 8 : 9,
+                      fontSize: widget.isLandscape ? 8 : 9,
                       color: Colors.white.withValues(alpha: 0.7),
                     ),
                     maxLines: 2,
@@ -156,16 +191,16 @@ class GpsHudCard extends StatelessWidget {
                 const SizedBox(height: 4),
 
                 // Lat/Long Row
-                if (showCoordinates)
+                if (widget.showCoordinates)
                   Row(
                     children: [
                       const Icon(Icons.my_location, color: AppColors.primary, size: 10),
                       const SizedBox(width: 3),
                       Flexible(
                         child: Text(
-                          coordinates,
+                          widget.coordinates,
                           style: TextStyle(
-                            fontSize: isLandscape ? 8 : 9,
+                            fontSize: widget.isLandscape ? 8 : 9,
                             fontFamily: 'monospace',
                             color: Colors.white70,
                           ),
@@ -177,14 +212,14 @@ class GpsHudCard extends StatelessWidget {
                 const SizedBox(height: 3),
 
                 // Date & Time Row
-                if (showDateTime)
+                if (widget.showDateTime)
                   Row(
                     children: [
                       Icon(
-                        isManualDateTime
+                        widget.isManualDateTime
                             ? Icons.edit_calendar
                             : Icons.calendar_today,
-                        color: isManualDateTime
+                        color: widget.isManualDateTime
                             ? const Color(0xFFF59E0B)
                             : Colors.white38,
                         size: 9,
@@ -194,8 +229,8 @@ class GpsHudCard extends StatelessWidget {
                         child: Text(
                           '$dateStr \u2022 $timeStr',
                           style: TextStyle(
-                            fontSize: isLandscape ? 8 : 9,
-                            color: isManualDateTime
+                            fontSize: widget.isLandscape ? 8 : 9,
+                            color: widget.isManualDateTime
                                 ? const Color(0xFFF59E0B)
                                 : Colors.white60,
                           ),
@@ -203,7 +238,7 @@ class GpsHudCard extends StatelessWidget {
                         ),
                       ),
                       // CUSTOM TIME badge
-                      if (isManualDateTime)
+                      if (widget.isManualDateTime)
                         Container(
                           margin: const EdgeInsets.only(left: 4),
                           padding: const EdgeInsets.symmetric(
@@ -234,9 +269,9 @@ class GpsHudCard extends StatelessWidget {
                 // Bottom Stats Bar
                 Row(
                   children: [
-                    _HudStat(icon: Icons.landscape_outlined, value: altitude),
+                    _HudStat(icon: Icons.landscape_outlined, value: widget.altitude),
                     const SizedBox(width: 8),
-                    _HudStat(icon: Icons.wb_sunny_outlined, value: temperature),
+                    _HudStat(icon: Icons.wb_sunny_outlined, value: widget.temperature),
                     const Spacer(),
                     Flexible(child: _buildGpsSignalIndicator()),
                   ],
@@ -260,10 +295,10 @@ class GpsHudCard extends StatelessWidget {
 
           // 2. Mini Map Preview (right)
           GestureDetector(
-            onTap: onMapTap,
+            onTap: widget.onMapTap,
             child: Container(
-              width: isLandscape ? 56 : 70,
-              height: isLandscape ? 56 : 70,
+              width: widget.isLandscape ? 56 : 70,
+              height: widget.isLandscape ? 56 : 70,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
@@ -283,11 +318,11 @@ class GpsHudCard extends StatelessWidget {
   // ─── SHARED HELPERS ──────────────────────────────────────────────────────────
 
   Widget _buildMapWidget() {
-    if (latitude != null && longitude != null) {
+    if (widget.latitude != null && widget.longitude != null) {
       return IgnorePointer(
         child: FlutterMap(
           options: MapOptions(
-            initialCenter: LatLng(latitude!, longitude!),
+            initialCenter: LatLng(widget.latitude!, widget.longitude!),
             initialZoom: 17.0,
           ),
           children: [
@@ -298,12 +333,12 @@ class GpsHudCard extends StatelessWidget {
             MarkerLayer(
               markers: [
                 Marker(
-                  point: LatLng(latitude!, longitude!),
+                  point: LatLng(widget.latitude!, widget.longitude!),
                   width: 22,
                   height: 22,
-                  child: showCompass && heading != null
+                  child: widget.showCompass && widget.heading != null
                       ? Transform.rotate(
-                          angle: heading! * 3.14159 / 180,
+                          angle: widget.heading! * 3.14159 / 180,
                           child: const Icon(
                             Icons.navigation,
                             color: AppColors.primary,
@@ -332,12 +367,12 @@ class GpsHudCard extends StatelessWidget {
 
   Widget _buildGpsSignalIndicator() {
     Color signalColor;
-    switch (gpsSignal) {
+    switch (widget.gpsSignal) {
       case 'HIGH':      signalColor = const Color(0xFF10B981); break;
       case 'GOOD':      signalColor = const Color(0xFF22C55E); break;
       case 'MEDIUM':    signalColor = const Color(0xFFF59E0B); break;
       case 'ACQUIRING': signalColor = const Color(0xFF6B7280); break;
-      case 'MANUAL':    signalColor = const Color(0xFFF59E0B); break; // amber
+      case 'MANUAL':    signalColor = const Color(0xFFF59E0B); break;
       default:          signalColor = const Color(0xFFEF4444);
     }
     return Row(
@@ -354,7 +389,7 @@ class GpsHudCard extends StatelessWidget {
         ),
         const SizedBox(width: 6),
         Text(
-          gpsSignal,
+          widget.gpsSignal,
           style: TextStyle(
             fontSize: 9,
             fontWeight: FontWeight.bold,
@@ -367,7 +402,7 @@ class GpsHudCard extends StatelessWidget {
   }
 
   String _getTileUrl() {
-    switch (mapType) {
+    switch (widget.mapType) {
       case 1: // Satellite (Esri)
       case 3: // Hybrid (Esri Satellite)
         return 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
@@ -417,5 +452,3 @@ class _HudStat extends StatelessWidget {
     );
   }
 }
-
-

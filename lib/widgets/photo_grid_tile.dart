@@ -39,7 +39,8 @@ class PhotoGridTile extends StatelessWidget {
                 ? Image.file(
                     file,
                     fit: BoxFit.cover,
-                    cacheWidth: 300, // Optimize memory for grid
+                    cacheWidth: 300,  // Optimize memory for grid
+                    cacheHeight: 300, // Square grid tiles — constrain both axes
                     errorBuilder: (context, error, stackTrace) => _buildPlaceholder(),
                   )
                 : _buildPlaceholder(),

@@ -284,26 +284,51 @@ class _EditLocationScreenState extends State<EditLocationScreen>
     });
   }
 
-  void _onSuggestionSelected(Map<String, dynamic> suggestion) {
+  Future<void> _onSuggestionSelected(Map<String, dynamic> suggestion) async {
     FocusScope.of(context).unfocus();
     _searchController.text = suggestion['display_name'] ?? '';
     setState(() {
       _showSuggestions = false;
       _suggestions = [];
+      _isSearching = true; // Show spinner while resolving coordinates
     });
     _suggAnimController.reverse();
 
-    final newLatLng = LatLng(
-      (suggestion['lat'] as num).toDouble(),
-      (suggestion['lon'] as num).toDouble(),
-    );
+    double lat;
+    double lon;
+    final String displayName = suggestion['display_name'] ?? '';
+
+    // Google Places returns a place_id — resolve it to coordinates via Details API
+    final placeId = suggestion['place_id'] as String?;
+    if (placeId != null && placeId.isNotEmpty) {
+      final details = await _locationService.getPlaceCoordinates(placeId);
+      if (!mounted) return;
+      if (details == null) {
+        setState(() => _isSearching = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not resolve location. Try again.')),
+        );
+        return;
+      }
+      lat = details['lat'] as double;
+      lon = details['lon'] as double;
+    } else {
+      // Fallback: already has lat/lon (legacy path)
+      lat = (suggestion['lat'] as num?)?.toDouble() ?? 0.0;
+      lon = (suggestion['lon'] as num?)?.toDouble() ?? 0.0;
+    }
+
+    if (!mounted) return;
+    setState(() => _isSearching = false);
+
+    final newLatLng = LatLng(lat, lon);
     // Move the map; onPositionChanged will NOT fire for programmatic moves
     // so we manually trigger the geocode + pin update.
     _mapController.move(newLatLng, 15.0);
     HapticFeedback.mediumImpact();
     setState(() {
       _pinnedLatLng = newLatLng;
-      _pinnedAddress = suggestion['display_name'] ?? '';
+      _pinnedAddress = displayName;
     });
     _pinAnimController.forward(from: 0);
   }

@@ -70,6 +70,7 @@ class AdService {
   bool _isRewardedInterstitialReady = false;
 
   int _photosCapturedCount = 0;
+  int _nextAdThreshold = 2; // Show on 2nd photo, then every 5 photos
   DateTime? _lastInterstitialTime;
 
   // Debug: 10 s cooldown for easy testing. Release: 3 minutes.
@@ -233,11 +234,12 @@ class AdService {
 
   // ── Photo capture counter ────────────────────────────────────────────────
 
-  void onPhotoCaptured({int showAfterCount = 3}) {
+  void onPhotoCaptured() {
     _photosCapturedCount++;
-    if (_photosCapturedCount >= showAfterCount) {
+    if (_photosCapturedCount >= _nextAdThreshold) {
       showInterstitialAd();
       _photosCapturedCount = 0;
+      _nextAdThreshold = 5;
     }
   }
 }
