@@ -826,8 +826,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         ),
 
         // GPS HUD — edge-anchored, sensor-driven orientation
-        // Isolated in its own RepaintBoundary so clock ticks don't repaint camera preview
-        RepaintBoundary(child: _buildOrientedHud()),
+        // Clock ticks and GPS updates won't repaint the camera preview
+        _buildOrientedHud(),
 
         // Bottom controls (shutter row)
         Positioned(
@@ -895,7 +895,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
             quarterTurns: 1,
             child: SizedBox(
               width: landscapeHudWidth,
-              child: _buildGpsHud(isLandscape: true),
+              child: RepaintBoundary(child: _buildGpsHud(isLandscape: true)),
             ),
           ),
         ),
@@ -909,7 +909,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
             quarterTurns: 3,
             child: SizedBox(
               width: landscapeHudWidth,
-              child: _buildGpsHud(isLandscape: true),
+              child: RepaintBoundary(child: _buildGpsHud(isLandscape: true)),
             ),
           ),
         ),
@@ -920,7 +920,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         left: 0,
         right: 0,
         bottom: 116,
-        child: _buildGpsHud(isLandscape: false),
+        child: RepaintBoundary(child: _buildGpsHud(isLandscape: false)),
       );
     }
   }
