@@ -75,7 +75,7 @@ dependencies:
   
   # In-App Purchases (Google Play Billing)
   in_app_purchase: ^3.2.0
-  in_app_purchase_android: ^0.3.6+2
+  in_app_purchase_android: ^0.4.0
   
   # URL launching (manage subscriptions, policy links)
   url_launcher: ^6.3.0
