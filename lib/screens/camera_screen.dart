@@ -691,55 +691,51 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         );
       }
       
-      // ── Production-grade camera preview ──────────────────────────────────
-      // The camera sensor has its own native aspect ratio (e.g. 4:3 from
-      // the hardware). We must respect that first, then crop to the user's
-      // chosen display ratio.
+      // ── Bulletproof production-grade camera preview ───────────────────────
       //
-      // Wrong approach (old code): force the display ratio directly onto
-      // CameraPreview → the image gets stretched or pillar-boxed.
+      // Why previewSize and NOT aspectRatio:
+      //   controller.value.aspectRatio = previewSize.width / previewSize.height
+      //   Android always streams in LANDSCAPE (e.g. 1920×1080).
+      //   Since our screen is locked to portrait, the platform rotates the
+      //   stream 90°. Using the raw landscape ratio in math gives wrong results
+      //   on some devices. Using previewSize directly + swapping w/h for portrait
+      //   is unambiguous and works on every Android phone.
       //
-      // Correct approach:
-      //  1. Wrap CameraPreview in its native sensor AspectRatio so Flutter
-      //     knows the true shape of the video stream.
-      //  2. Use FittedBox(fit: BoxFit.cover) to scale that up so it fills
-      //     the screen edge-to-edge with zero distortion (like every other
-      //     camera app).
-      //  3. Clip the result so any overflow beyond the screen is hidden.
+      // Algorithm — CSS "background-size: cover" in Flutter:
+      //   scale = max(screenW / visualW, screenH / visualH)
+      //   The preview is scaled up until it covers the entire screen in both
+      //   dimensions. Anything that overflows is clipped by ClipRect.
+      //   Result: edge-to-edge, no black bars, zero stretching.
 
       final controller = _cameraService.controller!;
-      // Native sensor ratio from the camera controller itself
-      final double sensorAspectRatio = controller.value.aspectRatio;
+      final previewSize = controller.value.previewSize;
+      if (previewSize == null) return Container(color: Colors.black);
 
-      // The crop ratio the user selected is used for framing guide/photo
-      // post-processing only — the live preview always fills the screen.
+      // Android streams landscape → swap for portrait display
+      final double visualW = previewSize.height; // e.g. 1080 from a 1920×1080 stream
+      final double visualH = previewSize.width;  // e.g. 1920 from a 1920×1080 stream
+
       return LayoutBuilder(
         builder: (context, constraints) {
-          final screenW = constraints.maxWidth;
-          final screenH = constraints.maxHeight;
+          final double screenW = constraints.maxWidth;
+          final double screenH = constraints.maxHeight;
 
-          // Scale the sensor stream to cover the full screen (no black bars)
-          // This is the same math that Android CameraX uses under the hood.
-          final double previewW;
-          final double previewH;
-          if (screenH / screenW > sensorAspectRatio) {
-            // Screen is taller than the sensor → letterbox would appear on
-            // top/bottom → instead scale by height so width overflows
-            previewH = screenH;
-            previewW = screenH / sensorAspectRatio;
-          } else {
-            // Screen is wider → scale by width
-            previewW = screenW;
-            previewH = screenW * sensorAspectRatio;
-          }
+          // Cover scale: scale up until the preview fills the screen entirely.
+          // max() ensures neither dimension has a black bar.
+          final double scaleW = screenW / visualW;
+          final double scaleH = screenH / visualH;
+          final double scale = scaleW > scaleH ? scaleW : scaleH;
+
+          final double scaledW = visualW * scale;
+          final double scaledH = visualH * scale;
 
           return ClipRect(
             child: OverflowBox(
-              maxWidth: previewW,
-              maxHeight: previewH,
+              maxWidth: scaledW,
+              maxHeight: scaledH,
               child: SizedBox(
-                width: previewW,
-                height: previewH,
+                width: scaledW,
+                height: scaledH,
                 child: CameraPreview(controller),
               ),
             ),
@@ -747,6 +743,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         },
       );
     }
+
 
     return Container(
       color: Colors.black,
