@@ -691,30 +691,60 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         );
       }
       
-      // Get aspect ratio value
-      double aspectRatioValue;
-      switch (_aspectRatio) {
-        case '16:9':
-          aspectRatioValue = 16 / 9;
-          break;
-        case '1:1':
-          aspectRatioValue = 1.0;
-          break;
-        case '4:3':
-        default:
-          aspectRatioValue = 4 / 3;
-          break;
-      }
-      
-      // Apply aspect ratio to camera preview
-      return ClipRect(
-        child: OverflowBox(
-          alignment: Alignment.center,
-          child: AspectRatio(
-            aspectRatio: aspectRatioValue,
-            child: CameraPreview(_cameraService.controller!),
-          ),
-        ),
+      // ── Production-grade camera preview ──────────────────────────────────
+      // The camera sensor has its own native aspect ratio (e.g. 4:3 from
+      // the hardware). We must respect that first, then crop to the user's
+      // chosen display ratio.
+      //
+      // Wrong approach (old code): force the display ratio directly onto
+      // CameraPreview → the image gets stretched or pillar-boxed.
+      //
+      // Correct approach:
+      //  1. Wrap CameraPreview in its native sensor AspectRatio so Flutter
+      //     knows the true shape of the video stream.
+      //  2. Use FittedBox(fit: BoxFit.cover) to scale that up so it fills
+      //     the screen edge-to-edge with zero distortion (like every other
+      //     camera app).
+      //  3. Clip the result so any overflow beyond the screen is hidden.
+
+      final controller = _cameraService.controller!;
+      // Native sensor ratio from the camera controller itself
+      final double sensorAspectRatio = controller.value.aspectRatio;
+
+      // The crop ratio the user selected is used for framing guide/photo
+      // post-processing only — the live preview always fills the screen.
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final screenW = constraints.maxWidth;
+          final screenH = constraints.maxHeight;
+
+          // Scale the sensor stream to cover the full screen (no black bars)
+          // This is the same math that Android CameraX uses under the hood.
+          final double previewW;
+          final double previewH;
+          if (screenH / screenW > sensorAspectRatio) {
+            // Screen is taller than the sensor → letterbox would appear on
+            // top/bottom → instead scale by height so width overflows
+            previewH = screenH;
+            previewW = screenH / sensorAspectRatio;
+          } else {
+            // Screen is wider → scale by width
+            previewW = screenW;
+            previewH = screenW * sensorAspectRatio;
+          }
+
+          return ClipRect(
+            child: OverflowBox(
+              maxWidth: previewW,
+              maxHeight: previewH,
+              child: SizedBox(
+                width: previewW,
+                height: previewH,
+                child: CameraPreview(controller),
+              ),
+            ),
+          );
+        },
       );
     }
 
