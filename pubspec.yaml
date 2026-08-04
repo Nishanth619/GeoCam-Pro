@@ -124,6 +124,7 @@ flutter:
     - assets/images/onboarding_location.png
     - assets/images/onboarding_overlays.png
     - assets/images/app_icon.png
+    - shorebird.yaml
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
