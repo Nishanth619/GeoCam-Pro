@@ -566,7 +566,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
   void _showTemplateSheet() {
-    _adService.showInterstitialAd();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -578,7 +577,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
   void _openGallery() {
-    _adService.showInterstitialAd();
     Navigator.of(context).push(
       MaterialPageRoute(builder: (context) => const GalleryScreen()),
     ).then((_) => _loadLastPhoto());

@@ -58,7 +58,6 @@ class _TemplateCustomizationSheetState extends State<TemplateCustomizationSheet>
     // Capture messenger BEFORE popping — the widget will be unmounted after pop.
     final messenger = ScaffoldMessenger.of(context);
     Navigator.pop(context);
-    _adService.showInterstitialAd();
     messenger.showSnackBar(
       SnackBar(
         content: Text(
