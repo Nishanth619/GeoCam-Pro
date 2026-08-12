@@ -1,0 +1,42 @@
+name: Build Release App Bundle
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build_release_aab:
+    name: Build GeoCam Release AAB
+    runs-on: ubuntu-latest
+    steps:
+      - name: Free Disk Space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android/ndk /opt/ghc /opt/hostedtoolcache/CodeQL && sudo apt-get clean
+      
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+          cache: 'gradle'
+          
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+          
+      - name: Install Dependencies
+        run: flutter pub get
+        
+      - name: Build Release App Bundle
+        run: |
+          flutter build appbundle --release
+          mv build/app/outputs/bundle/release/app-release.aab ./GeoCam-Pro-Release.aab
+          
+      - name: Upload AAB Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeoCam-Pro-Release-AAB
+          path: GeoCam-Pro-Release.aab
