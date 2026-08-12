@@ -205,9 +205,6 @@ class _EditLocationScreenState extends State<EditLocationScreen>
       debugPrint('🎯 One-shot geo edit consumed.');
     }
 
-    // Show an interstitial ad when confirming (non-blocking).
-    _adService.showInterstitialAd();
-
     if (!mounted) return;
     Navigator.of(context).pop(true); // true = location was updated
   }

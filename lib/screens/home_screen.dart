@@ -34,9 +34,6 @@ class _HomeScreenState extends State<HomeScreen> {
       bottomNavigationBar: BottomNavBar(
         currentIndex: _currentIndex,
         onTap: (index) {
-          if (index == 3 && _currentIndex != 3) {
-            _adService.showInterstitialAd();
-          }
           setState(() {
             _currentIndex = index;
           });
