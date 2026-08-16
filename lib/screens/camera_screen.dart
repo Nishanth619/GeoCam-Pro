@@ -202,11 +202,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         return;
       }
 
-      // Give Android ~300 ms to propagate the newly-granted camera permission
-      // to the camera HAL before we open the device.  Without this delay some
-      // devices (especially Xiaomi / MIUI) open the camera before the driver
-      // has finished registering the grant and return a grey preview.
-      await Future.delayed(const Duration(milliseconds: 300));
+      // Give Android time to propagate the newly-granted camera permission
+      // to the camera HAL before we open the device. Without this delay some
+      // devices (especially Samsung / Xiaomi / MIUI) open the camera before
+      // the driver has finished registering the grant and return a grey preview.
+      // 800ms is the safe value confirmed across MIUI, OneUI, and stock Android.
+      await Future.delayed(const Duration(milliseconds: 800));
     }
 
     // Camera service already has 3-attempt retry logic internally

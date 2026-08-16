@@ -100,6 +100,12 @@ class CameraService {
 
       await _controller!.initialize();
       
+      // Stabilization delay: let the camera HAL finish setting up the preview
+      // stream before we hand the controller to the UI. Without this, some
+      // devices show a grey texture for 1-2 seconds even though isInitialized
+      // is true. 400ms covers the vast majority of devices.
+      await Future.delayed(const Duration(milliseconds: 400));
+      
       // Re-apply last flash mode if supported
       if (_controller!.value.description.lensDirection == CameraLensDirection.back) {
         try {
