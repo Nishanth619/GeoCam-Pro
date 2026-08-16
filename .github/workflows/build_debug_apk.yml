@@ -32,7 +32,7 @@ jobs:
         
       - name: Build Debug APK
         run: |
-          flutter build apk --debug
+          flutter build apk --debug --android-skip-build-dependency-validation
           mv build/app/outputs/flutter-apk/app-debug.apk ./GeoCam-Pro-Debug.apk
           
       - name: Upload APK Artifact

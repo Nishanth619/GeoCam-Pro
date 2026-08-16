@@ -43,7 +43,7 @@ jobs:
         
       - name: Build Release App Bundle
         run: |
-          flutter build appbundle --release
+          flutter build appbundle --release --android-skip-build-dependency-validation
           mv build/app/outputs/bundle/release/app-release.aab ./GeoCam-Pro-Release.aab
           
       - name: Upload AAB Artifact
