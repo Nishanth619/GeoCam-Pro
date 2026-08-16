@@ -137,12 +137,14 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.inactive) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      // Only dispose when truly backgrounded/killed — NOT on inactive
+      // (inactive fires for notification shade, phone calls, etc.)
       _cameraService.dispose();
     } else if (state == AppLifecycleState.resumed) {
-      _initializeCamera(silent: true);
-      // If location was never started (e.g. user granted permission via Settings
-      // after first-launch denial), restart it now.
+      // Do a full (non-silent) re-init so errors surface properly
+      _initializeCamera();
       if (_positionSubscription == null) {
         _startLocationUpdates();
       }
