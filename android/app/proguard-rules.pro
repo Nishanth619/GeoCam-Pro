@@ -14,8 +14,27 @@
 -keep class com.google.android.gms.ads.** { *; }
 -keep class com.google.ads.** { *; }
 
-# Camera Plugin
+# Camera Plugin — keep ALL classes including Android hardware camera2 API
+# R8 in release mode strips these, causing a grey/black preview screen
 -keep class io.flutter.plugins.camera.** { *; }
+-keep class io.flutter.plugins.camera.features.** { *; }
+-keep class io.flutter.plugins.camera.media.** { *; }
+-keepclassmembers class io.flutter.plugins.camera.** { *; }
+-dontwarn io.flutter.plugins.camera.**
+
+# Android Camera2 API — never strip
+-keep class android.hardware.camera2.** { *; }
+-keep interface android.hardware.camera2.** { *; }
+-keepclassmembers class android.hardware.camera2.** { *; }
+
+# Android Surface / SurfaceTexture — required for camera preview rendering
+-keep class android.graphics.SurfaceTexture { *; }
+-keep class android.view.Surface { *; }
+-keepclassmembers class android.graphics.SurfaceTexture { *; }
+-keepclassmembers class android.view.Surface { *; }
+
+# Keep GL texture classes (camera preview uses OpenGL texture rendering)
+-keep class android.opengl.** { *; }
 
 # Geolocator
 -keep class com.baseflow.geolocator.** { *; }
