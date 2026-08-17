@@ -718,33 +718,23 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
       return LayoutBuilder(
         builder: (context, constraints) {
-          final double screenW = constraints.maxWidth;
-          final double screenH = constraints.maxHeight;
-
-          // Cover scale: scale up until the preview fills the screen entirely.
-          // max() ensures neither dimension has a black bar.
-          final double scaleW = screenW / visualW;
-          final double scaleH = screenH / visualH;
-          final double scale = scaleW > scaleH ? scaleW : scaleH;
-
-          final double scaledW = visualW * scale;
-          final double scaledH = visualH * scale;
-
           return ClipRect(
-            child: OverflowBox(
-              maxWidth: scaledW,
-              maxHeight: scaledH,
-              child: SizedBox(
-                width: scaledW,
-                height: scaledH,
-                child: CameraPreview(controller),
+            child: SizedBox(
+              width: constraints.maxWidth,
+              height: constraints.maxHeight,
+              child: FittedBox(
+                fit: BoxFit.cover,
+                child: SizedBox(
+                  width: visualW,
+                  height: visualH,
+                  child: CameraPreview(controller),
+                ),
               ),
             ),
           );
         },
       );
     }
-
 
     return Container(
       color: Colors.black,
@@ -802,9 +792,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     return Stack(
       children: [
         // RepaintBoundary isolates the camera texture from UI overlay updates.
-        // When the HUD, toolbar, or clock changes, the GPU composites independently
-        // and never re-rasterizes the camera video stream.
-        RepaintBoundary(child: Positioned.fill(child: _buildCameraPreview())),
+        // Positioned.fill must be the direct child of Stack.
+        Positioned.fill(child: RepaintBoundary(child: _buildCameraPreview())),
 
         // Shutter flash
         if (_showShutterEffect)
