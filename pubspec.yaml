@@ -73,9 +73,9 @@ dependencies:
   sensors_plus: ^4.0.2
   image_picker: ^1.1.2
   
-  # In-App Purchases (Google Play Billing)
-  in_app_purchase: ^3.3.0
-  in_app_purchase_android: ^0.5.2
+  # In-App Purchases (Google Play Billing 8+)
+  in_app_purchase: ^3.3.1
+  in_app_purchase_android: ^0.5.3
   
   # URL launching (manage subscriptions, policy links)
   url_launcher: ^6.3.0
