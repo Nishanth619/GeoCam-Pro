@@ -26,6 +26,7 @@ class SettingsService {
   static const String _keyAppLanguage = 'app_language';
   static const String _keyWaitForGpsLock = 'wait_for_gps_lock';
   static const String _keyShowInclinometer = 'show_inclinometer';
+  static const String _keyDualSave = 'dual_save';
   
   // Watermark settings
   static const String _keyWatermarkLogo = 'watermark_logo';
@@ -75,6 +76,10 @@ class SettingsService {
     _prefs?.setBool(_keyShowInclinometer, value);
     cameraSettingsRevision.value++;
   }
+
+  /// Pro: also keep an unstamped copy (IMG_x_original.jpg) of every photo.
+  bool get dualSave => _prefs?.getBool(_keyDualSave) ?? false;
+  set dualSave(bool value) => _prefs?.setBool(_keyDualSave, value);
 
   String get imageResolution => _prefs?.getString(_keyImageResolution) ?? 'high';
   set imageResolution(String value) => _prefs?.setString(_keyImageResolution, value);

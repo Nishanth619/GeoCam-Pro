@@ -572,6 +572,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       final temp = _temperature;
       final weather = _weatherCondition;
       final currentAspectRatio = _aspectRatio;
+      final applyWatermark = _settings.showWatermark && position != null;
+      final keepOriginal =
+          applyWatermark && _settings.dualSave && _settings.hasFeatureAccess;
       debugPrint('📸 PROCESSING → capturedAt=$capturedAt | rotationTurns=$rotationTurns');
       debugPrint('📍 Using ${_locationService.isManualOverrideActive ? "MANUAL" : "GPS"} position: ${position?.latitude}, ${position?.longitude}');
 
@@ -594,8 +597,15 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         weatherCondition: weather,
       );
 
+      // 2b. Dual save: keep an unstamped copy next to the photo.
+      // Not inserted into the database — it only lives in the device gallery.
+      String? originalPath;
+      if (keepOriginal) {
+        originalPath = await _saveOriginalCopy(imagePath);
+      }
+
       // 3. Apply GPS watermark overlay if enabled
-      if (_settings.showWatermark && position != null) {
+      if (applyWatermark) {
         debugPrint('🎨 Applying GPS watermark overlay (Background)...');
         final watermarkedPath = await _watermarkService.createWatermarkedImage(
           photo,
@@ -635,6 +645,17 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         
         // RE-SCAN: Ensure Gallery picks up the newly added GPS metadata
         await _cameraService.scanFile(imagePath);
+
+        if (originalPath != null) {
+          await _exifService.writeGpsToImage(
+            imagePath: originalPath,
+            latitude: position.latitude,
+            longitude: position.longitude,
+            altitude: position.altitude,
+            dateTime: capturedAt,
+          );
+          await _cameraService.scanFile(originalPath);
+        }
       }
 
       // 5. Save to database
@@ -678,6 +699,22 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       }
     } catch (e) {
       debugPrint('Background processing error: $e');
+    }
+  }
+
+  /// Copies IMG_x.jpg to IMG_x_original.jpg in the same folder.
+  /// Returns the copy's path, or null if copying failed.
+  Future<String?> _saveOriginalCopy(String imagePath) async {
+    try {
+      final dot = imagePath.lastIndexOf('.');
+      final originalPath = dot == -1
+          ? '${imagePath}_original'
+          : '${imagePath.substring(0, dot)}_original${imagePath.substring(dot)}';
+      await File(imagePath).copy(originalPath);
+      return originalPath;
+    } catch (e) {
+      debugPrint('Dual save: failed to copy original: $e');
+      return null;
     }
   }
 

@@ -321,6 +321,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 },
               ),
               _SettingsToggleTile(
+                icon: Icons.photo_library_outlined,
+                title: 'Save original photo',
+                subtitle: 'Also saves an unedited copy alongside every stamped photo',
+                value: _settings.dualSave && _settings.hasFeatureAccess,
+                locked: !_settings.hasFeatureAccess,
+                onLockedTap: _openPremium,
+                onChanged: (value) {
+                  setState(() => _settings.dualSave = value);
+                },
+              ),
+              _SettingsToggleTile(
                 icon: Icons.gps_fixed,
                 title: 'Wait for GPS lock before capture',
                 subtitle: 'Shutter stays disabled until accuracy is better than ±10 m',
