@@ -366,9 +366,12 @@ class LocationService {
   /// • Builds richly structured display names (street → city → state → country).
   // ── Google Places API key ─────────────────────────────────────────────────
   // WARNING: Never hardcode API keys in public GitHub repositories.
-  // We have removed the key to prevent GitHub secret leak warnings.
-  // The app will now automatically use the free Photon API fallback below.
-  static const String _googlePlacesApiKey = '';
+  // Injected at build time from the GOOGLE_PLACES_API_KEY GitHub secret:
+  //   flutter build ... --dart-define=GOOGLE_PLACES_API_KEY=<key>
+  // When absent (local/debug builds), Google is skipped and the free
+  // Photon API fallback below is used.
+  static const String _googlePlacesApiKey =
+      String.fromEnvironment('GOOGLE_PLACES_API_KEY');
 
   /// Returns place suggestions using Google Places Autocomplete.
   /// Falls back to Nominatim automatically if Google returns an error.
@@ -378,46 +381,48 @@ class LocationService {
     final appLang = SettingsService().appLanguage;
     final langCode = appLang == 'auto' || appLang == 'tl' ? 'en' : appLang;
 
-    // ── Try Google Places first ───────────────────────────────────────────────
-    try {
-      final url = Uri.parse(
-        'https://maps.googleapis.com/maps/api/place/autocomplete/json'
-        '?input=${Uri.encodeComponent(query.trim())}'
-        '&language=$langCode'
-        '&key=$_googlePlacesApiKey',
-      );
+    // ── Try Google Places first (only when a key was provided at build time) ──
+    if (_googlePlacesApiKey.isNotEmpty) {
+      try {
+        final url = Uri.parse(
+          'https://maps.googleapis.com/maps/api/place/autocomplete/json'
+          '?input=${Uri.encodeComponent(query.trim())}'
+          '&language=$langCode'
+          '&key=$_googlePlacesApiKey',
+        );
 
-      final response = await http.get(url).timeout(const Duration(seconds: 8));
+        final response = await http.get(url).timeout(const Duration(seconds: 8));
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body) as Map<String, dynamic>;
-        final status = data['status'] as String? ?? '';
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body) as Map<String, dynamic>;
+          final status = data['status'] as String? ?? '';
 
-        if (status == 'OK') {
-          final predictions = (data['predictions'] as List<dynamic>? ?? []);
-          final results = <Map<String, dynamic>>[];
-          for (final item in predictions) {
-            final description = item['description'] as String? ?? '';
-            final placeId = item['place_id'] as String? ?? '';
-            if (description.isEmpty || placeId.isEmpty) continue;
-            results.add({
-              'display_name': description,
-              'place_id': placeId,
-              'lat': null,
-              'lon': null,
-            });
-            if (results.length >= 6) break;
+          if (status == 'OK') {
+            final predictions = (data['predictions'] as List<dynamic>? ?? []);
+            final results = <Map<String, dynamic>>[];
+            for (final item in predictions) {
+              final description = item['description'] as String? ?? '';
+              final placeId = item['place_id'] as String? ?? '';
+              if (description.isEmpty || placeId.isEmpty) continue;
+              results.add({
+                'display_name': description,
+                'place_id': placeId,
+                'lat': null,
+                'lon': null,
+              });
+              if (results.length >= 6) break;
+            }
+            if (results.isNotEmpty) return results;
+          } else {
+            // Log actual Google error so we can diagnose in release logs
+            debugPrint('⚠️ Google Places status: $status — falling back to Nominatim');
           }
-          if (results.isNotEmpty) return results;
-        } else {
-          // Log actual Google error so we can diagnose in release logs
-          debugPrint('⚠️ Google Places status: $status — falling back to Nominatim');
         }
+      } on TimeoutException {
+        debugPrint('⚠️ Google Places timed out — falling back to Nominatim');
+      } catch (e) {
+        debugPrint('⚠️ Google Places error: $e — falling back to Nominatim');
       }
-    } on TimeoutException {
-      debugPrint('⚠️ Google Places timed out — falling back to Nominatim');
-    } catch (e) {
-      debugPrint('⚠️ Google Places error: $e — falling back to Nominatim');
     }
 
     // ── Fallback: Photon (Komoot) API ────────────────────────────────────────
