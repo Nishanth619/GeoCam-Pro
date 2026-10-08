@@ -57,6 +57,10 @@
 # Share Plus
 -keep class dev.fluttercommunity.plus.share.** { *; }
 
+# Printing (PDF report share/print sheet)
+-keep class net.nfet.flutter.printing.** { *; }
+-keep class android.print.PdfConvert { *; }
+
 # HTTP
 -keep class io.flutter.plugins.urllauncher.** { *; }
 
