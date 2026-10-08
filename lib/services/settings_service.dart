@@ -25,6 +25,7 @@ class SettingsService {
   static const String _keyHasAcceptedTerms = 'has_accepted_terms';
   static const String _keyAppLanguage = 'app_language';
   static const String _keyWaitForGpsLock = 'wait_for_gps_lock';
+  static const String _keyShowInclinometer = 'show_inclinometer';
   
   // Watermark settings
   static const String _keyWatermarkLogo = 'watermark_logo';
@@ -65,6 +66,13 @@ class SettingsService {
   bool get waitForGpsLock => _prefs?.getBool(_keyWaitForGpsLock) ?? false;
   set waitForGpsLock(bool value) {
     _prefs?.setBool(_keyWaitForGpsLock, value);
+    cameraSettingsRevision.value++;
+  }
+
+  /// Pro: show camera pitch/roll on the HUD and in the stamp.
+  bool get showInclinometer => _prefs?.getBool(_keyShowInclinometer) ?? false;
+  set showInclinometer(bool value) {
+    _prefs?.setBool(_keyShowInclinometer, value);
     cameraSettingsRevision.value++;
   }
 

@@ -47,6 +47,11 @@ class GpsHudCard extends StatefulWidget {
   /// lock gauge (red > 30 m, yellow 10–30 m, green < 10 m).
   final double? accuracy;
 
+  /// Inclinometer: camera pitch / roll in degrees (roll null when undefined).
+  final double? pitch;
+  final double? roll;
+  final bool showInclinometer;
+
   const GpsHudCard({
     super.key,
     required this.address,
@@ -69,6 +74,9 @@ class GpsHudCard extends StatefulWidget {
     this.isManualLocation = false,
     this.isManualDateTime = false,
     this.accuracy,
+    this.pitch,
+    this.roll,
+    this.showInclinometer = false,
   });
 
   @override
@@ -269,6 +277,12 @@ class _GpsHudCardState extends State<GpsHudCard> {
                     ],
                   ),
 
+                // Inclinometer Row
+                if (widget.showInclinometer && widget.pitch != null) ...[
+                  const SizedBox(height: 3),
+                  _buildInclinometerRow(),
+                ],
+
                 const SizedBox(height: 5),
 
                 // Bottom Stats Bar
@@ -367,6 +381,35 @@ class _GpsHudCardState extends State<GpsHudCard> {
       child: const Center(
         child: Icon(Icons.satellite_alt, color: Colors.white24, size: 20),
       ),
+    );
+  }
+
+  Widget _buildInclinometerRow() {
+    final fontSize = widget.isLandscape ? 8.0 : 9.0;
+    TextSpan angle(String label, double? degrees) => TextSpan(
+          text: '$label: ${degrees == null ? '--' : '${degrees.toStringAsFixed(1)}°'}',
+          style: TextStyle(
+            color: degrees != null && degrees.abs() > 45 ? AppColors.warning : Colors.white70,
+          ),
+        );
+    return Row(
+      children: [
+        const Icon(Icons.straighten, color: AppColors.primary, size: 10),
+        const SizedBox(width: 3),
+        Flexible(
+          child: Text.rich(
+            TextSpan(
+              style: TextStyle(fontSize: fontSize, fontFamily: 'monospace'),
+              children: [
+                angle('Pitch', widget.pitch),
+                const TextSpan(text: '  '),
+                angle('Roll', widget.roll),
+              ],
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
     );
   }
 

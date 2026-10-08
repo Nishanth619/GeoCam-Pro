@@ -52,6 +52,8 @@ class WatermarkService {
     double opacity = 0.9,
     bool saveToGallery = false, // If true, saves to Pictures/GEOCAM PRO. If false, saves to temp.
     double rotationTurns = 0.0, // Used to rotate the image physically into landscape
+    double? pitch, // Inclinometer: stamped when non-null
+    double? roll,
   }) async {
     try {
       final File originalFile = File(photo.imagePath);
@@ -133,6 +135,8 @@ class WatermarkService {
         showDate: showDate,
         opacity: opacity,
         isLandscape: isLandscape,
+        pitch: pitch,
+        roll: roll,
       );
 
       final ui.Image watermarkedImage = await recorder.endRecording().toImage(
@@ -289,6 +293,8 @@ class WatermarkService {
     required bool showDate,
     required double opacity,
     bool isLandscape = false,
+    double? pitch,
+    double? roll,
   }) async {
     // In portrait, scale off the width (the short edge of a tall image).
     // In landscape, scale off the height (the short edge of a wide image).
@@ -300,7 +306,10 @@ class WatermarkService {
     final double cardWidth = isLandscape
         ? width * 0.60   // Landscape: compact 60% width card
         : width - padding * 2;  // Portrait: full width minus padding
-    final double cardHeight = isLandscape ? 190 * scale : 320 * scale;
+    final double baseCardHeight = isLandscape ? 190 * scale : 320 * scale;
+    // Extra row for the inclinometer readout
+    final double tiltRowHeight = pitch == null ? 0 : (isLandscape ? 24 * scale : 36 * scale);
+    final double cardHeight = baseCardHeight + tiltRowHeight;
     final double cardX = (width - cardWidth) / 2; // Center horizontally
     final double cardY = height - cardHeight - padding;
     final double cornerRadius = 24 * scale;
@@ -312,7 +321,7 @@ class WatermarkService {
     );
 
     // 1. Precise Mini Map (On the Right)
-    final double mapSize = cardHeight - 20 * scale;
+    final double mapSize = baseCardHeight - 20 * scale;
     final double mapX = cardX + cardWidth - mapSize - 10 * scale;
     final double mapY = cardY + 10 * scale;
     final RRect mapBox = RRect.fromRectAndRadius(Rect.fromLTWH(mapX, mapY, mapSize, mapSize), Radius.circular(cornerRadius - 6 * scale));
@@ -433,6 +442,13 @@ class WatermarkService {
       final localeCode = appLang == 'auto' ? null : (appLang == 'tl' ? 'en' : appLang);
       final dateStr = DateFormat('EEEE, dd/MM/yyyy • hh:mm a', localeCode).format(photo.capturedAt);
       _drawText(canvas, dateStr, textX, textY, maxTextWidth, metaSize, Colors.white70);
+      textY += isLandscape ? 24 * scale : 36 * scale;
+    }
+
+    // D2. Inclinometer
+    if (pitch != null) {
+      String fmt(double? deg) => deg == null ? '--' : '${deg.toStringAsFixed(1)}°';
+      _drawText(canvas, 'Pitch: ${fmt(pitch)}  Roll: ${fmt(roll)}', textX, textY, maxTextWidth, metaSize, Colors.white70, fontWeight: FontWeight.w500);
     }
 
     // E. Footer Branding

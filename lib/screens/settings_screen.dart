@@ -56,6 +56,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (mounted) setState(() {});
   }
 
+  void _openPremium() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const PremiumScreen()),
+    ).then((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
   String _getLanguageDisplayName(String code, AppLocalizations l10n) {
     switch (code) {
       case 'en': return 'English';
@@ -318,6 +327,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 value: _settings.waitForGpsLock,
                 onChanged: (value) {
                   setState(() => _settings.waitForGpsLock = value);
+                },
+              ),
+              _SettingsToggleTile(
+                icon: Icons.straighten,
+                title: 'Inclinometer Overlay',
+                subtitle: 'Shows tilt angle in degrees — for roofing, solar & inspections',
+                value: _settings.showInclinometer && _settings.hasFeatureAccess,
+                locked: !_settings.hasFeatureAccess,
+                onLockedTap: _openPremium,
+                onChanged: (value) {
+                  setState(() => _settings.showInclinometer = value);
                 },
               ),
 
@@ -705,6 +725,9 @@ class _SettingsToggleTile extends StatelessWidget {
   final String? subtitle;
   final bool value;
   final ValueChanged<bool> onChanged;
+  /// Pro-gated: shows a lock instead of the toggle and calls [onLockedTap].
+  final bool locked;
+  final VoidCallback? onLockedTap;
 
   const _SettingsToggleTile({
     required this.icon,
@@ -712,6 +735,8 @@ class _SettingsToggleTile extends StatelessWidget {
     this.subtitle,
     required this.value,
     required this.onChanged,
+    this.locked = false,
+    this.onLockedTap,
   });
 
   @override
@@ -740,10 +765,13 @@ class _SettingsToggleTile extends StatelessWidget {
               ),
             )
           : null,
-      trailing: CustomToggle(
-        value: value,
-        onChanged: onChanged,
-      ),
+      onTap: locked ? onLockedTap : null,
+      trailing: locked
+          ? const Icon(Icons.lock_rounded, color: AppColors.primary, size: 20)
+          : CustomToggle(
+              value: value,
+              onChanged: onChanged,
+            ),
     );
   }
 }

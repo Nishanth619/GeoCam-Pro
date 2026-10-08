@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -90,6 +91,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   double _hudRotationTurns = 0.0; // 0 = portrait, ±0.25 = landscape
   StreamSubscription<AccelerometerEvent>? _sensorSubscription;
 
+  // Inclinometer — fed by the same accelerometer subscription. Held in a
+  // ValueNotifier so 5 Hz updates rebuild only the HUD, not the whole screen.
+  final ValueNotifier<({double pitch, double? roll})?> _tilt = ValueNotifier(null);
+
 
   @override
   void initState() {
@@ -129,7 +134,38 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       if (_hudRotationTurns != turns && mounted) {
         setState(() => _hudRotationTurns = turns);
       }
+      if (_showInclinometer) _updateTilt(event, turns);
     });
+  }
+
+  bool get _showInclinometer =>
+      _settings.showInclinometer && _settings.hasFeatureAccess;
+
+  /// Camera-relative tilt from gravity (device axes: x right, y up, z out of screen).
+  /// pitch: elevation of the lens axis — 0° level, +90° straight up, −90° straight down.
+  /// roll: horizon tilt relative to the current hold (portrait or landscape),
+  ///       undefined (null) when the camera points nearly straight up/down.
+  void _updateTilt(AccelerometerEvent e, double turns) {
+    const radToDeg = 180 / math.pi;
+    final horizontal = math.sqrt(e.x * e.x + e.y * e.y);
+    final pitch = math.atan2(-e.z, horizontal) * radToDeg;
+
+    double? roll;
+    if (horizontal > 1.7) { // ~80° pitch — beyond this roll is just noise
+      roll = math.atan2(e.x, e.y) * radToDeg;
+      if (turns == -0.25) roll -= 90;
+      if (turns == 0.25) roll += 90;
+    }
+
+    // Light low-pass filter to steady the readout
+    final prev = _tilt.value;
+    const alpha = 0.3;
+    final smoothPitch = prev == null ? pitch : prev.pitch + alpha * (pitch - prev.pitch);
+    final prevRoll = prev?.roll;
+    final smoothRoll = roll == null || prevRoll == null || (roll - prevRoll).abs() > 90
+        ? roll
+        : prevRoll + alpha * (roll - prevRoll);
+    _tilt.value = (pitch: smoothPitch, roll: smoothRoll);
   }
 
 
@@ -140,6 +176,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     _sensorSubscription?.cancel();
     _gpsLockPollTimer?.cancel();
     _settings.cameraSettingsRevision.removeListener(_onCameraSettingsChanged);
+    _tilt.dispose();
     _cameraService.dispose();
     // Restore all orientations when leaving the camera screen
     SystemChrome.setPreferredOrientations([
@@ -447,6 +484,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     // manual override value can't be cleared between press and processing.
     final double shutterRotationTurns = _hudRotationTurns;
     final DateTime shutterCapturedAt = _locationService.effectiveDateTime;
+    final shutterTilt = _showInclinometer ? _tilt.value : null;
     debugPrint('📸 SHUTTER → rotationTurns=$shutterRotationTurns | capturedAt=$shutterCapturedAt | isManualDT=${_locationService.isManualDateTimeActive}');
 
     // 1. INSTANT FEEDBACK: Shutter sound (optional) and Visual Flash
@@ -472,7 +510,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
       if (imagePath != null) {
         // Pass BOTH snapshotted values — rotation AND capturedAt
-        unawaited(_processCapturedPhoto(imagePath, shutterRotationTurns, shutterCapturedAt));
+        unawaited(_processCapturedPhoto(imagePath, shutterRotationTurns, shutterCapturedAt,
+            tilt: shutterTilt));
 
         // ONE-SHOT RESET: After stamping the photo with any custom overrides,
         // immediately clear them so the next photo uses real GPS + today's date.
@@ -522,7 +561,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   /// [rotationTurns] and [capturedAt] are both snapshotted at shutter-press
   /// time so async gaps cannot affect them.
   Future<void> _processCapturedPhoto(
-      String imagePath, double rotationTurns, DateTime capturedAt) async {
+      String imagePath, double rotationTurns, DateTime capturedAt,
+      {({double pitch, double? roll})? tilt}) async {
     try {
       // All values are snapshotted — no reads from live state after this point.
       final position = _locationService.effectivePosition;
@@ -568,6 +608,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           mapType: _settings.templateMapType,
           opacity: _settings.watermarkOpacity,
           rotationTurns: rotationTurns,
+          pitch: tilt?.pitch,
+          roll: tilt?.roll,
         );
         debugPrint('🎨 Watermark done. rotationTurns=$rotationTurns → path=${watermarkedPath ?? "FAILED"}');
 
@@ -1199,6 +1241,18 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
   Widget _buildGpsHud({bool isLandscape = false}) {
+    if (!_showInclinometer) return _buildGpsHudCard(isLandscape: isLandscape);
+    return ValueListenableBuilder(
+      valueListenable: _tilt,
+      builder: (context, tilt, _) =>
+          _buildGpsHudCard(isLandscape: isLandscape, tilt: tilt),
+    );
+  }
+
+  Widget _buildGpsHudCard({
+    required bool isLandscape,
+    ({double pitch, double? roll})? tilt,
+  }) {
     // Camera preview ALWAYS shows live GPS position and current system time.
     // Custom overrides (set in EditLocationScreen) only apply at the moment
     // of capture (shutter press) — not to the live preview HUD.
@@ -1223,6 +1277,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           : '--',
       gpsSignal: _locationService.getGpsSignalStrength(_currentPosition?.accuracy),
       accuracy: _liveAccuracy,
+      showInclinometer: tilt != null,
+      pitch: tilt?.pitch,
+      roll: tilt?.roll,
       dateTime: null,        // null → GpsHudCard owns its own 1-Hz clock timer
       isManualDateTime: false,  // Never show "CUSTOM" badge in live preview
       latitude: livePosition?.latitude,
