@@ -6,6 +6,7 @@ import '../services/database_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/photo_grid_tile.dart';
 import '../widgets/project_picker_sheet.dart';
+import '../widgets/report_flow.dart';
 import 'photo_detail_screen.dart';
 
 /// Shows the photos in a project, with rename and delete actions.
@@ -97,6 +98,13 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Generate report',
+            icon: const Icon(Icons.picture_as_pdf_outlined),
+            onPressed: (photos == null || photos.isEmpty)
+                ? null
+                : () => startReportFlow(context, photos, projectName: _project.name),
+          ),
           IconButton(
             tooltip: 'Rename',
             icon: const Icon(Icons.edit_outlined),

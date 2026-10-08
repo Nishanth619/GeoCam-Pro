@@ -398,6 +398,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onChanged: (v) => setState(() => _settings.templateCoordFormat = v),
               ),
               
+              // Reports Section
+              _buildSectionHeader('REPORTS', Icons.picture_as_pdf_outlined),
+              _SettingsTextFieldTile(
+                icon: Icons.business_outlined,
+                label: 'Company Name',
+                initialValue: _settings.companyName,
+                onChanged: (v) => _settings.companyName = v.trim(),
+              ),
+              _SettingsTextFieldTile(
+                icon: Icons.folder_outlined,
+                label: 'Default Project Name',
+                initialValue: _settings.defaultProjectName,
+                onChanged: (v) => _settings.defaultProjectName = v.trim(),
+              ),
+
               // Measurement Units Section
               _buildSectionHeader(l10n.settingsUnits.toUpperCase(), Icons.straighten_outlined),
               _SettingsSegmentTile(
@@ -783,6 +798,53 @@ class _SettingsToggleTile extends StatelessWidget {
               value: value,
               onChanged: onChanged,
             ),
+    );
+  }
+}
+
+class _SettingsTextFieldTile extends StatefulWidget {
+  final IconData icon;
+  final String label;
+  final String initialValue;
+  final ValueChanged<String> onChanged;
+
+  const _SettingsTextFieldTile({
+    required this.icon,
+    required this.label,
+    required this.initialValue,
+    required this.onChanged,
+  });
+
+  @override
+  State<_SettingsTextFieldTile> createState() => _SettingsTextFieldTileState();
+}
+
+class _SettingsTextFieldTileState extends State<_SettingsTextFieldTile> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.initialValue);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: Icon(widget.icon, color: AppColors.textSecondary, size: 24),
+      title: TextField(
+        controller: _controller,
+        onChanged: widget.onChanged,
+        textCapitalization: TextCapitalization.words,
+        style: const TextStyle(fontSize: 16, color: Colors.white),
+        decoration: InputDecoration(
+          labelText: widget.label,
+          labelStyle: const TextStyle(color: AppColors.textMuted),
+          border: InputBorder.none,
+        ),
+      ),
     );
   }
 }

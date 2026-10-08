@@ -12,6 +12,7 @@ import '../services/settings_service.dart';
 import '../widgets/photo_grid_tile.dart';
 import '../widgets/soft_paywall_banner.dart';
 import '../widgets/project_picker_sheet.dart';
+import '../widgets/report_flow.dart';
 import 'package:geocam_flutter/l10n/app_localizations.dart';
 import 'photo_detail_screen.dart';
 import 'project_detail_screen.dart';
@@ -114,6 +115,13 @@ class _GalleryScreenState extends State<GalleryScreen> {
     setState(() {
       if (!_selectedIds.remove(id)) _selectedIds.add(id);
     });
+  }
+
+  Future<void> _generateReport() async {
+    final selected = _photos.where((p) => _selectedIds.contains(p.id)).toList();
+    final project = _projects.where((p) => p.id == _filterProjectId).firstOrNull;
+    await startReportFlow(context, selected, projectName: project?.name);
+    if (mounted) setState(() {}); // Pro status may have changed
   }
 
   Future<void> _moveSelectedToProject() async {
@@ -270,6 +278,19 @@ class _GalleryScreenState extends State<GalleryScreen> {
               icon: const Icon(Icons.drive_file_move_outline),
               label: const Text('Move'),
               style: TextButton.styleFrom(foregroundColor: AppColors.primary),
+            ),
+            const SizedBox(width: 4),
+            FilledButton.icon(
+              onPressed: count == 0 ? null : _generateReport,
+              icon: Icon(
+                _settings.hasFeatureAccess ? Icons.picture_as_pdf_outlined : Icons.lock_rounded,
+                size: 18,
+              ),
+              label: const Text('Generate Report'),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.black,
+              ),
             ),
           ],
         ),

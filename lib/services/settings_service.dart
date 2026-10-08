@@ -29,6 +29,8 @@ class SettingsService {
   static const String _keyDualSave = 'dual_save';
   static const String _keyShowQrCode = 'show_qr_code';
   static const String _keyActiveProjectId = 'active_project_id';
+  static const String _keyCompanyName = 'report_company_name';
+  static const String _keyDefaultProjectName = 'report_default_project_name';
   
   // Watermark settings
   static const String _keyWatermarkLogo = 'watermark_logo';
@@ -96,6 +98,14 @@ class SettingsService {
       _prefs?.setString(_keyActiveProjectId, value);
     }
   }
+
+  // ============= Report Settings =============
+
+  String get companyName => _prefs?.getString(_keyCompanyName) ?? '';
+  set companyName(String value) => _prefs?.setString(_keyCompanyName, value);
+
+  String get defaultProjectName => _prefs?.getString(_keyDefaultProjectName) ?? '';
+  set defaultProjectName(String value) => _prefs?.setString(_keyDefaultProjectName, value);
 
   String get imageResolution => _prefs?.getString(_keyImageResolution) ?? 'high';
   set imageResolution(String value) => _prefs?.setString(_keyImageResolution, value);

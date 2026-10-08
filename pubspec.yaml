@@ -63,6 +63,8 @@ dependencies:
   # Image processing for watermarks
   image: ^4.3.0
   qr_flutter: ^4.1.0 # QR location stamp
+  pdf: ^3.11.0 # Inspection reports
+  printing: ^5.13.1
   
   # Utilities
   intl: ^0.20.2
