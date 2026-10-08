@@ -6,13 +6,18 @@ import '../models/photo_model.dart';
 class PhotoGridTile extends StatelessWidget {
   final Photo photo;
   final bool isSelected;
+  /// Select mode: shows an empty circle on unselected tiles.
+  final bool showCheckbox;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
 
   const PhotoGridTile({
     super.key,
     required this.photo,
     this.isSelected = false,
+    this.showCheckbox = false,
     this.onTap,
+    this.onLongPress,
   });
 
   @override
@@ -22,6 +27,7 @@ class PhotoGridTile extends StatelessWidget {
 
     return GestureDetector(
       onTap: onTap,
+      onLongPress: onLongPress,
       child: Container(
         decoration: BoxDecoration(
           color: AppColors.cardDark,
@@ -76,6 +82,22 @@ class PhotoGridTile extends StatelessWidget {
                 ),
               ),
             ),
+
+            // Empty checkbox in select mode
+            if (showCheckbox && !isSelected)
+              Positioned(
+                left: 8,
+                top: 8,
+                child: Container(
+                  width: 20,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.3),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 1.5),
+                  ),
+                ),
+              ),
 
             // Selection indicator
             if (isSelected)

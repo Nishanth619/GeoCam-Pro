@@ -28,6 +28,7 @@ class SettingsService {
   static const String _keyShowInclinometer = 'show_inclinometer';
   static const String _keyDualSave = 'dual_save';
   static const String _keyShowQrCode = 'show_qr_code';
+  static const String _keyActiveProjectId = 'active_project_id';
   
   // Watermark settings
   static const String _keyWatermarkLogo = 'watermark_logo';
@@ -85,6 +86,16 @@ class SettingsService {
   /// Pro: stamp a QR code linking to the photo's location on Google Maps.
   bool get showQrCode => _prefs?.getBool(_keyShowQrCode) ?? false;
   set showQrCode(bool value) => _prefs?.setBool(_keyShowQrCode, value);
+
+  /// Project new camera captures are filed under (null = none).
+  String? get activeProjectId => _prefs?.getString(_keyActiveProjectId);
+  set activeProjectId(String? value) {
+    if (value == null) {
+      _prefs?.remove(_keyActiveProjectId);
+    } else {
+      _prefs?.setString(_keyActiveProjectId, value);
+    }
+  }
 
   String get imageResolution => _prefs?.getString(_keyImageResolution) ?? 'high';
   set imageResolution(String value) => _prefs?.setString(_keyImageResolution, value);

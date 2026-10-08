@@ -22,6 +22,8 @@ import '../services/settings_service.dart';
 import '../services/exif_service.dart';
 import '../services/watermark_service.dart';
 import '../models/photo_model.dart';
+import '../models/project.dart';
+import '../widgets/project_picker_sheet.dart';
 import 'package:geocam_flutter/l10n/app_localizations.dart';
 import 'template_customization_sheet.dart';
 import 'gallery_screen.dart';
@@ -75,6 +77,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   double? _temperature;
   String? _weatherCondition;
 
+  // Active project new photos are filed under (persisted in settings)
+  Project? _activeProject;
+  StreamSubscription<void>? _dbSubscription;
+
   // Last captured photo for gallery thumbnail
   Photo? _lastPhoto;
   bool _lastPhotoExists = false; // Cached existsSync() result — avoids disk I/O in build()
@@ -105,6 +111,25 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     _settings.cameraSettingsRevision.addListener(_onCameraSettingsChanged);
     _initializeAll();
     _startSensorOrientation();
+    _loadActiveProject();
+    // Projects can be renamed/deleted from the gallery while we stay mounted
+    _dbSubscription = _databaseService.onChange.listen((_) => _loadActiveProject());
+  }
+
+  Future<void> _loadActiveProject() async {
+    final id = _settings.activeProjectId;
+    final project = id == null ? null : await _databaseService.getProjectById(id);
+    if (id != null && project == null) _settings.activeProjectId = null; // deleted
+    if (mounted && (project?.id != _activeProject?.id || project?.name != _activeProject?.name)) {
+      setState(() => _activeProject = project);
+    }
+  }
+
+  Future<void> _pickProject() async {
+    final choice = await showProjectPickerSheet(context, selectedId: _activeProject?.id);
+    if (choice == null || !mounted) return;
+    _settings.activeProjectId = choice.projectId;
+    await _loadActiveProject();
   }
 
   void _onCameraSettingsChanged() {
@@ -175,6 +200,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     _positionSubscription?.cancel();
     _sensorSubscription?.cancel();
     _gpsLockPollTimer?.cancel();
+    _dbSubscription?.cancel();
     _settings.cameraSettingsRevision.removeListener(_onCameraSettingsChanged);
     _tilt.dispose();
     _cameraService.dispose();
@@ -572,6 +598,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       final temp = _temperature;
       final weather = _weatherCondition;
       final currentAspectRatio = _aspectRatio;
+      final projectId = _activeProject?.id;
       final applyWatermark = _settings.showWatermark && position != null;
       final keepOriginal =
           applyWatermark && _settings.dualSave && _settings.hasFeatureAccess;
@@ -595,6 +622,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         capturedAt: capturedAt,
         temperature: temp,
         weatherCondition: weather,
+        projectId: projectId,
       );
 
       // 2b. Dual save: keep an unstamped copy next to the photo.
@@ -990,6 +1018,19 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           ),
         ),
 
+        // Active project pill (below the flash button)
+        Positioned(
+          top: 0,
+          left: 0,
+          child: SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 24, top: 80),
+              child: _buildProjectPill(),
+            ),
+          ),
+        ),
+
         // Zoom slider
         Positioned(
           right: 20,
@@ -1219,6 +1260,43 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildProjectPill() {
+    final project = _activeProject;
+    final color = project != null ? Color(project.color) : Colors.white70;
+    return GestureDetector(
+      onTap: _pickProject,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.4),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: project != null ? color.withValues(alpha: 0.6) : Colors.white.withValues(alpha: 0.1),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(project != null ? Icons.folder : Icons.folder_outlined, color: color, size: 16),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                project?.name ?? 'No project',
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: project != null ? Colors.white : Colors.white70,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
