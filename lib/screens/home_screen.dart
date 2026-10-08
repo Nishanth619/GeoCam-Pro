@@ -5,6 +5,7 @@ import 'map_view_screen.dart';
 import 'gallery_screen.dart';
 import 'settings_screen.dart';
 import '../services/ad_service.dart';
+import '../services/location_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -16,6 +17,13 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
   final AdService _adService = AdService();
+
+  @override
+  void initState() {
+    super.initState();
+    // Resolve addresses of photos captured offline in a previous session
+    LocationService().syncPendingGeocodes(force: true);
+  }
 
   final List<Widget> _screens = [
     const CameraScreen(),

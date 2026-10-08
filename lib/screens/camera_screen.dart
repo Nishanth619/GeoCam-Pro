@@ -64,6 +64,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   // Location data
   Position? _currentPosition;
   String? _currentAddress;
+  // Offline geocoding state for _currentAddress
+  bool _addressIsOffline = false;
+  bool _addressNeedsGeocode = false;
+  DateTime? _lastGeocodeAttempt;
   StreamSubscription<Position>? _positionSubscription;
   // True once a fresh fix arrives (stream or poll). The cached last-known
   // position can be hours old, so its accuracy must not count as a lock.
@@ -225,6 +229,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       _gpsLockPollTimer = null;
     } else if (state == AppLifecycleState.resumed) {
       _updateGpsLockPolling();
+      unawaited(_locationService.syncPendingGeocodes());
       // Do a full (non-silent) re-init so errors surface properly
       _initializeCamera();
       if (_positionSubscription == null) {
@@ -333,12 +338,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         _currentPosition = lastKnown;
       });
       // Try to get address for last known in background
-      _locationService.getAddressFromCoordinates(
+      _locationService.resolveAddress(
         lastKnown.latitude,
         lastKnown.longitude,
-      ).then((address) {
-        if (mounted && address != null) {
-          setState(() => _currentAddress = address);
+      ).then((result) {
+        if (mounted) {
+          _applyAddress(result);
           _fetchWeather();
         }
       });
@@ -364,15 +369,18 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           });
           _updateGpsLockPolling();
 
-          if (isSignificantMove || _currentAddress == null) {
-            final address = await _locationService.getAddressFromCoordinates(
+          // Also retry (at most every 30 s) while the address is an offline placeholder
+          final retryOffline = _addressNeedsGeocode &&
+              (_lastGeocodeAttempt == null ||
+                  DateTime.now().difference(_lastGeocodeAttempt!).inSeconds > 30);
+          if (isSignificantMove || _currentAddress == null || retryOffline) {
+            _lastGeocodeAttempt = DateTime.now();
+            final result = await _locationService.resolveAddress(
               position.latitude,
               position.longitude,
             );
-            if (mounted && address != null) {
-              setState(() {
-                _currentAddress = address;
-              });
+            if (mounted) {
+              _applyAddress(result);
               _fetchWeather();
             }
           }
@@ -386,6 +394,18 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     // 3. Trigger a fresh single-shot accurate fix in background (optional, stream handles it)
     unawaited(_locationService.getCurrentPosition());
     _updateGpsLockPolling();
+  }
+
+  void _applyAddress(AddressResult result) {
+    setState(() {
+      _currentAddress = result.address;
+      _addressIsOffline = result.isOfflineFallback;
+      _addressNeedsGeocode = result.needsGeocode;
+    });
+    // Online again — fill in addresses of photos captured offline
+    if (result.source == AddressSource.network) {
+      unawaited(_locationService.syncPendingGeocodes());
+    }
   }
 
   /// Accuracy of the latest live fix, or null while still acquiring.
@@ -599,6 +619,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       final weather = _weatherCondition;
       final currentAspectRatio = _aspectRatio;
       final projectId = _activeProject?.id;
+      // Captured without a real address — resolve later when back online
+      final geocodePending = position != null &&
+          !_locationService.isManualOverrideActive &&
+          (address == null || _addressNeedsGeocode);
       final applyWatermark = _settings.showWatermark && position != null;
       final keepOriginal =
           applyWatermark && _settings.dualSave && _settings.hasFeatureAccess;
@@ -623,6 +647,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         temperature: temp,
         weatherCondition: weather,
         projectId: projectId,
+        geocodePending: geocodePending,
       );
 
       // 2b. Dual save: keep an unstamped copy next to the photo.
@@ -1393,6 +1418,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           : '--',
       gpsSignal: _locationService.getGpsSignalStrength(_currentPosition?.accuracy),
       accuracy: _liveAccuracy,
+      isAddressCached: _addressIsOffline,
       showInclinometer: tilt != null,
       pitch: tilt?.pitch,
       roll: tilt?.roll,

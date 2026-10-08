@@ -52,6 +52,9 @@ class GpsHudCard extends StatefulWidget {
   final double? roll;
   final bool showInclinometer;
 
+  /// True when the address is an offline fallback (cached or placeholder).
+  final bool isAddressCached;
+
   const GpsHudCard({
     super.key,
     required this.address,
@@ -77,6 +80,7 @@ class GpsHudCard extends StatefulWidget {
     this.pitch,
     this.roll,
     this.showInclinometer = false,
+    this.isAddressCached = false,
   });
 
   @override
@@ -161,6 +165,11 @@ class _GpsHudCardState extends State<GpsHudCard> {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
+                    if (widget.isAddressCached && !widget.isManualLocation)
+                      const Padding(
+                        padding: EdgeInsets.only(right: 4),
+                        child: Text('📡', style: TextStyle(fontSize: 10)),
+                      ),
                     if (widget.isManualLocation)
                       Container(
                         padding: const EdgeInsets.symmetric(

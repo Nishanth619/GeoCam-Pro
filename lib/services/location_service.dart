@@ -8,7 +8,33 @@ import 'package:geocoding/geocoding.dart';
 import 'package:mgrs_dart/mgrs_dart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'database_service.dart';
 import 'settings_service.dart';
+
+/// Where a reverse-geocoded address came from.
+enum AddressSource {
+  /// Fresh from the geocoder.
+  network,
+  /// From the memory or ≤30-day database cache.
+  cache,
+  /// Geocoder failed (offline); an older cached address was used.
+  offlineCache,
+  /// Geocoder failed and nothing was cached: a coordinate placeholder.
+  offline,
+}
+
+class AddressResult {
+  final String address;
+  final AddressSource source;
+  const AddressResult(this.address, this.source);
+
+  /// Not a fresh lookup because the network was unavailable.
+  bool get isOfflineFallback =>
+      source == AddressSource.offlineCache || source == AddressSource.offline;
+
+  /// No real address yet — retry once connectivity returns.
+  bool get needsGeocode => source == AddressSource.offline;
+}
 
 /// Service to handle location operations with offline fallback
 class LocationService {
@@ -261,14 +287,30 @@ class LocationService {
   }
 
   /// Convert coordinates to address with offline fallback
-  Future<String?> getAddressFromCoordinates(double lat, double lon) async {
+  Future<String?> getAddressFromCoordinates(double lat, double lon) async =>
+      (await resolveAddress(lat, lon)).address;
+
+  /// Reverse geocodes with a memory → database (≤30 days) → geocoder chain.
+  /// If the geocoder fails: any older cached address, else an
+  /// "📡 Offline" coordinate placeholder.
+  Future<AddressResult> resolveAddress(double lat, double lon) async {
     // Generate cache key (rounded to 4 decimal places = ~10m precision)
     final cacheKey = '${lat.toStringAsFixed(4)},${lon.toStringAsFixed(4)}';
-    
+    final db = DatabaseService();
+
     // Check cache first (offline fallback)
     if (_geocodeCache.containsKey(cacheKey)) {
       debugPrint('Using cached address for $cacheKey');
-      return _geocodeCache[cacheKey];
+      return AddressResult(_geocodeCache[cacheKey]!, AddressSource.cache);
+    }
+    try {
+      final cached = await db.getCachedAddress(lat, lon);
+      if (cached != null) {
+        _addToCache(cacheKey, cached);
+        return AddressResult(cached, AddressSource.cache);
+      }
+    } catch (e) {
+      debugPrint('Geocode cache read failed: $e');
     }
 
     try {
@@ -348,16 +390,75 @@ class LocationService {
         
         final address = addressParts.join(', ');
         
-        // Cache the result for offline use
-        _addToCache(cacheKey, address);
-        
-        debugPrint('Got address: $address');
-        return address;
+        if (address.isNotEmpty) {
+          // Cache the result for offline use
+          _addToCache(cacheKey, address);
+          unawaited(db.cacheAddress(lat, lon, address).catchError(
+              (Object e) => debugPrint('Geocode cache write failed: $e')));
+
+          debugPrint('Got address: $address');
+          return AddressResult(address, AddressSource.network);
+        }
       }
-      return _getOfflineFallbackAddress(lat, lon);
+      // Geocoder answered but has no address here (e.g. open water) —
+      // that's not an outage, so don't mark it for retry.
+      return AddressResult(_getOfflineFallbackAddress(lat, lon), AddressSource.network);
     } catch (e) {
       debugPrint('Error getting address (using fallback): $e');
-      return _getOfflineFallbackAddress(lat, lon);
+      try {
+        final stale = await db.getCachedAddress(lat, lon, maxAge: null);
+        if (stale != null) return AddressResult(stale, AddressSource.offlineCache);
+      } catch (_) {}
+      return AddressResult(
+        '📡 Offline • ${_getOfflineFallbackAddress(lat, lon)}',
+        AddressSource.offline,
+      );
+    }
+  }
+
+  // ============= Pending geocode sync =============
+
+  bool _isSyncingGeocodes = false;
+  DateTime? _lastGeocodeSync;
+
+  /// Lightweight connectivity probe.
+  Future<bool> hasInternet() async {
+    try {
+      final response = await http
+          .head(Uri.parse('https://www.google.com'))
+          .timeout(const Duration(seconds: 5));
+      return response.statusCode < 500;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Fills in addresses for photos captured offline. Throttled to once every
+  /// 2 minutes unless [force]; stops early if the network drops again.
+  Future<void> syncPendingGeocodes({bool force = false}) async {
+    if (_isSyncingGeocodes) return;
+    final now = DateTime.now();
+    if (!force &&
+        _lastGeocodeSync != null &&
+        now.difference(_lastGeocodeSync!) < const Duration(minutes: 2)) {
+      return;
+    }
+    _isSyncingGeocodes = true;
+    _lastGeocodeSync = now;
+    try {
+      final db = DatabaseService();
+      final pending = await db.getGeocodePendingPhotos();
+      if (pending.isEmpty || !await hasInternet()) return;
+      debugPrint('📡 Resolving ${pending.length} offline photo address(es)');
+      for (final photo in pending) {
+        final result = await resolveAddress(photo.latitude, photo.longitude);
+        if (result.isOfflineFallback) break; // offline again — retry later
+        if (photo.id != null) await db.resolvePhotoAddress(photo.id!, result.address);
+      }
+    } catch (e) {
+      debugPrint('Pending geocode sync failed: $e');
+    } finally {
+      _isSyncingGeocodes = false;
     }
   }
 
