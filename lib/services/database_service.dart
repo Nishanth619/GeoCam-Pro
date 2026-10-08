@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../models/photo_model.dart';
+import '../models/project.dart';
 
 class DatabaseService {
   static final DatabaseService _instance = DatabaseService._internal();
@@ -26,9 +27,42 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
+  }
+
+  /// v1 → v2: projects, offline geocode cache, photo project/pending columns.
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('ALTER TABLE photos ADD COLUMN project_id TEXT');
+      await db.execute(
+          'ALTER TABLE photos ADD COLUMN geocode_pending INTEGER NOT NULL DEFAULT 0');
+      await _createV2Tables(db);
+    }
+  }
+
+  Future<void> _createV2Tables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS projects (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        color INTEGER NOT NULL,
+        created_at INTEGER NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS geocode_cache (
+        lat_key REAL NOT NULL,
+        lng_key REAL NOT NULL,
+        address TEXT NOT NULL,
+        cached_at INTEGER NOT NULL,
+        PRIMARY KEY (lat_key, lng_key)
+      )
+    ''');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_photos_project ON photos(project_id)');
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -47,13 +81,16 @@ class DatabaseService {
         weatherCondition TEXT,
         weatherIcon TEXT,
         humidity INTEGER,
-        windSpeed REAL
+        windSpeed REAL,
+        project_id TEXT,
+        geocode_pending INTEGER NOT NULL DEFAULT 0
       )
     ''');
 
     // Create index for faster queries
     await db.execute('CREATE INDEX idx_photos_capturedAt ON photos(capturedAt DESC)');
     await db.execute('CREATE INDEX idx_photos_location ON photos(latitude, longitude)');
+    await _createV2Tables(db);
   }
 
   /// Insert a new photo
@@ -171,6 +208,123 @@ class DatabaseService {
     }
 
     return grouped;
+  }
+
+  // ============= Projects =============
+
+  Future<Project> createProject(String name, int color) async {
+    final db = await database;
+    final project = Project(
+      id: Project.generateId(),
+      name: name.trim(),
+      color: color,
+      createdAt: DateTime.now(),
+    );
+    await db.insert('projects', project.toMap());
+    _changeController.add(null);
+    return project;
+  }
+
+  Future<List<Project>> getAllProjects() async {
+    final db = await database;
+    final maps = await db.query('projects', orderBy: 'created_at ASC');
+    return maps.map(Project.fromMap).toList();
+  }
+
+  Future<Project?> getProjectById(String id) async {
+    final db = await database;
+    final maps = await db.query('projects', where: 'id = ?', whereArgs: [id]);
+    return maps.isEmpty ? null : Project.fromMap(maps.first);
+  }
+
+  Future<void> renameProject(String id, String name) async {
+    final db = await database;
+    await db.update('projects', {'name': name.trim()},
+        where: 'id = ?', whereArgs: [id]);
+    _changeController.add(null);
+  }
+
+  /// Deletes the project. Its photos are kept and become unassigned.
+  Future<void> deleteProject(String id) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.update('photos', {'project_id': null},
+          where: 'project_id = ?', whereArgs: [id]);
+      await txn.delete('projects', where: 'id = ?', whereArgs: [id]);
+    });
+    _changeController.add(null);
+  }
+
+  /// Assigns photos to a project (null = remove from any project).
+  Future<void> assignPhotosToProject(List<int> photoIds, String? projectId) async {
+    if (photoIds.isEmpty) return;
+    final db = await database;
+    final placeholders = List.filled(photoIds.length, '?').join(',');
+    await db.update('photos', {'project_id': projectId},
+        where: 'id IN ($placeholders)', whereArgs: photoIds);
+    _changeController.add(null);
+  }
+
+  Future<void> assignPhotoToProject(int photoId, String? projectId) =>
+      assignPhotosToProject([photoId], projectId);
+
+  Future<List<Photo>> getPhotosByProject(String projectId) async {
+    final db = await database;
+    final maps = await db.query('photos',
+        where: 'project_id = ?',
+        whereArgs: [projectId],
+        orderBy: 'capturedAt DESC');
+    return maps.map(Photo.fromMap).toList();
+  }
+
+  // ============= Offline geocoding =============
+
+  static double _geoKey(double v) => double.parse(v.toStringAsFixed(4));
+
+  Future<void> cacheAddress(double lat, double lng, String address) async {
+    final db = await database;
+    await db.insert(
+      'geocode_cache',
+      {
+        'lat_key': _geoKey(lat),
+        'lng_key': _geoKey(lng),
+        'address': address,
+        'cached_at': DateTime.now().millisecondsSinceEpoch,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  /// Cached address for the ~11 m cell around (lat, lng), or null if absent
+  /// or older than [maxAge] (pass null to accept any age).
+  Future<String?> getCachedAddress(double lat, double lng,
+      {Duration? maxAge = const Duration(days: 30)}) async {
+    final db = await database;
+    final maps = await db.query('geocode_cache',
+        columns: ['address', 'cached_at'],
+        where: 'lat_key = ? AND lng_key = ?',
+        whereArgs: [_geoKey(lat), _geoKey(lng)]);
+    if (maps.isEmpty) return null;
+    if (maxAge != null) {
+      final cachedAt =
+          DateTime.fromMillisecondsSinceEpoch(maps.first['cached_at'] as int);
+      if (DateTime.now().difference(cachedAt) > maxAge) return null;
+    }
+    return maps.first['address'] as String;
+  }
+
+  Future<List<Photo>> getGeocodePendingPhotos() async {
+    final db = await database;
+    final maps = await db.query('photos', where: 'geocode_pending = 1');
+    return maps.map(Photo.fromMap).toList();
+  }
+
+  /// Sets a resolved address and clears the pending flag.
+  Future<void> resolvePhotoAddress(int photoId, String address) async {
+    final db = await database;
+    await db.update('photos', {'address': address, 'geocode_pending': 0},
+        where: 'id = ?', whereArgs: [photoId]);
+    _changeController.add(null);
   }
 
   /// Close database connection

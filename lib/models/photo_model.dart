@@ -13,6 +13,11 @@ class Photo {
   final String? weatherIcon;
   final int? humidity;
   final double? windSpeed;
+  /// Project/folder this photo belongs to (null = unassigned).
+  final String? projectId;
+  /// True when the photo was captured offline and its address still needs
+  /// reverse geocoding once connectivity returns.
+  final bool geocodePending;
 
   Photo({
     this.id,
@@ -29,6 +34,8 @@ class Photo {
     this.weatherIcon,
     this.humidity,
     this.windSpeed,
+    this.projectId,
+    this.geocodePending = false,
   });
 
   Map<String, dynamic> toMap() {
@@ -47,6 +54,8 @@ class Photo {
       'weatherIcon': weatherIcon,
       'humidity': humidity,
       'windSpeed': windSpeed,
+      'project_id': projectId,
+      'geocode_pending': geocodePending ? 1 : 0,
     };
   }
 
@@ -66,6 +75,8 @@ class Photo {
       weatherIcon: map['weatherIcon'] as String?,
       humidity: map['humidity'] as int?,
       windSpeed: map['windSpeed'] as double?,
+      projectId: map['project_id'] as String?,
+      geocodePending: (map['geocode_pending'] as int? ?? 0) == 1,
     );
   }
 
@@ -84,6 +95,9 @@ class Photo {
     String? weatherIcon,
     int? humidity,
     double? windSpeed,
+    String? projectId,
+    bool clearProjectId = false,
+    bool? geocodePending,
   }) {
     return Photo(
       id: id ?? this.id,
@@ -100,6 +114,8 @@ class Photo {
       weatherIcon: weatherIcon ?? this.weatherIcon,
       humidity: humidity ?? this.humidity,
       windSpeed: windSpeed ?? this.windSpeed,
+      projectId: clearProjectId ? null : (projectId ?? this.projectId),
+      geocodePending: geocodePending ?? this.geocodePending,
     );
   }
 
