@@ -60,3 +60,7 @@ linux/flutter/ephemeral/
 
 # macOS
 macos/Flutter/ephemeral/
+
+# Base64-encoded keystore (stored in GitHub secrets) - DO NOT COMMIT!
+keystore_base64.txt
+*_base64.txt
