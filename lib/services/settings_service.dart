@@ -120,7 +120,22 @@ class SettingsService {
   String get templateDateFormat => _prefs?.getString(_keyTemplateDateFormat) ?? 'DD/MM/YYYY';
   set templateDateFormat(String value) => _prefs?.setString(_keyTemplateDateFormat, value);
 
-  String get templateCoordFormat => _prefs?.getString(_keyTemplateCoordFormat) ?? 'Decimal Degrees (DD)';
+  // Coordinate format values (stored as-is in prefs; also used as display labels)
+  static const String coordFormatDD = 'Decimal Degrees (DD)';
+  static const String coordFormatDMS = 'Degrees Minutes Seconds (DMS)';
+  static const String coordFormatUTM = 'UTM (Universal Transverse Mercator)';
+  static const String coordFormatMGRS = 'MGRS (Military Grid Reference System)';
+  static const List<String> coordFormats = [
+    coordFormatDD,
+    coordFormatDMS,
+    coordFormatUTM,
+    coordFormatMGRS,
+  ];
+
+  String get templateCoordFormat {
+    final value = _prefs?.getString(_keyTemplateCoordFormat);
+    return coordFormats.contains(value) ? value! : coordFormatDD;
+  }
   set templateCoordFormat(String value) => _prefs?.setString(_keyTemplateCoordFormat, value);
 
   // ============= Reward Settings =============

@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:mgrs_dart/mgrs_dart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'settings_service.dart';
@@ -626,6 +627,41 @@ class LocationService {
     double seconds = (minutesDecimal - minutes) * 60;
     
     return '$degrees°${minutes.toString().padLeft(2, '0')}\'${seconds.toStringAsFixed(1)}"';
+  }
+
+  /// Format coordinates as UTM, e.g. "37N 500000 4649776".
+  /// Falls back to DD in polar regions, where UTM is undefined.
+  String formatCoordinatesUTM(double lat, double lon) {
+    if (lat < -80 || lat > 84) return formatCoordinatesDD(lat, lon);
+    final utm = Mgrs.LLtoUTM(lat, lon);
+    final hemisphere = lat >= 0 ? 'N' : 'S';
+    return '${utm.zoneNumber}$hemisphere ${utm.easting.round()} ${utm.northing.round()}';
+  }
+
+  /// Format coordinates as MGRS at 1 m precision, e.g. "37TFJ 00000 49776".
+  /// Falls back to DD in polar regions, where MGRS uses UPS (unsupported).
+  String formatCoordinatesMGRS(double lat, double lon) {
+    if (lat < -80 || lat > 84) return formatCoordinatesDD(lat, lon);
+    final mgrs = Mgrs.forward([lon, lat], 5);
+    // Last 10 chars are 5-digit easting + 5-digit northing
+    final grid = mgrs.substring(0, mgrs.length - 10);
+    final easting = mgrs.substring(mgrs.length - 10, mgrs.length - 5);
+    final northing = mgrs.substring(mgrs.length - 5);
+    return '$grid $easting $northing';
+  }
+
+  /// Format coordinates using one of [SettingsService.coordFormats].
+  String formatCoordinates(double lat, double lon, String format) {
+    switch (format) {
+      case SettingsService.coordFormatDMS:
+        return formatCoordinatesDMS(lat, lon);
+      case SettingsService.coordFormatUTM:
+        return formatCoordinatesUTM(lat, lon);
+      case SettingsService.coordFormatMGRS:
+        return formatCoordinatesMGRS(lat, lon);
+      default:
+        return formatCoordinatesDD(lat, lon);
+    }
   }
 
   /// Get GPS signal strength description

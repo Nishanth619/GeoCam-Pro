@@ -32,7 +32,7 @@ class _TemplateCustomizationSheetState extends State<TemplateCustomizationSheet>
       ];
 
   final List<String> _dateFormats = ['DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY-MM-DD'];
-  final List<String> _coordFormats = ['Decimal Degrees (DD)', 'Degrees Minutes Seconds (DMS)'];
+  final List<String> _coordFormats = SettingsService.coordFormats;
 
   @override
   void initState() {

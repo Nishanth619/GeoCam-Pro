@@ -44,6 +44,7 @@ dependencies:
   # Location & Geocoding
   geolocator: ^13.0.2
   geocoding: ^3.0.0
+  mgrs_dart: ^2.0.0 # UTM / MGRS coordinate formats
   
   # Database & Storage
   sqflite: ^2.4.1

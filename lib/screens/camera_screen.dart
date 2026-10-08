@@ -1124,15 +1124,11 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       isLandscape: isLandscape,
       address: displayAddress,
       coordinates: livePosition != null
-          ? (_settings.templateCoordFormat == 'Decimal Degrees (DD)'
-              ? _locationService.formatCoordinatesDD(
-                  livePosition.latitude,
-                  livePosition.longitude,
-                )
-              : _locationService.formatCoordinatesDMS(
-                  livePosition.latitude,
-                  livePosition.longitude,
-                ))
+          ? _locationService.formatCoordinates(
+              livePosition.latitude,
+              livePosition.longitude,
+              _settings.templateCoordFormat,
+            )
           : l10n.noGpsSignal,
       altitude: livePosition?.altitude != null
           ? _settings.formatAltitude(livePosition!.altitude)

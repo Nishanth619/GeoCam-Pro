@@ -10,6 +10,7 @@ import 'package:path/path.dart' as path;
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import '../models/photo_model.dart';
+import 'location_service.dart';
 import 'settings_service.dart';
 import 'package:image/image.dart' as img;
 
@@ -418,7 +419,10 @@ class WatermarkService {
     textY += isLandscape ? 6 * scale : 15 * scale;
 
     // C. Meta Row
-    String meta = "Lat ${photo.latitude.toStringAsFixed(6)}°, Long ${photo.longitude.toStringAsFixed(6)}°";
+    final coordFormat = SettingsService().templateCoordFormat;
+    String meta = coordFormat == SettingsService.coordFormatDD
+        ? "Lat ${photo.latitude.toStringAsFixed(6)}°, Long ${photo.longitude.toStringAsFixed(6)}°"
+        : LocationService().formatCoordinates(photo.latitude, photo.longitude, coordFormat);
     if (showAltitude) meta += " | Elev: ${photo.altitude?.toInt() ?? 0}m";
     _drawText(canvas, meta, textX, textY, maxTextWidth, metaSize, Colors.white70, fontWeight: FontWeight.w500);
     textY += isLandscape ? 24 * scale : 38 * scale;

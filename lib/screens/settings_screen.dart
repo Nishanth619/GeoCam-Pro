@@ -352,8 +352,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _SettingsDropdownTile(
                 icon: Icons.gps_fixed_outlined,
                 title: l10n.settingsCoordPrecision,
-                options: const ['Decimal Degrees (DD)', 'Degrees Minutes Seconds (DMS)'],
+                options: SettingsService.coordFormats,
                 value: _settings.templateCoordFormat,
+                displayLabel: _shortCoordFormatLabel,
                 onChanged: (v) => setState(() => _settings.templateCoordFormat = v),
               ),
               
@@ -805,6 +806,8 @@ class _SettingsDropdownTile extends StatelessWidget {
   final List<String> options;
   final String value;
   final ValueChanged<String> onChanged;
+  /// Optional compact label for the selected value (menu items keep full text).
+  final String Function(String)? displayLabel;
 
   const _SettingsDropdownTile({
     required this.icon,
@@ -812,6 +815,7 @@ class _SettingsDropdownTile extends StatelessWidget {
     required this.options,
     required this.value,
     required this.onChanged,
+    this.displayLabel,
   });
 
   @override
@@ -830,9 +834,25 @@ class _SettingsDropdownTile extends StatelessWidget {
         icon: const Icon(Icons.expand_more, color: AppColors.primary, size: 20),
         style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.primary),
         onChanged: (v) { if (v != null) onChanged(v); },
+        selectedItemBuilder: displayLabel == null
+            ? null
+            : (context) => options
+                .map((opt) => Center(child: Text(displayLabel!(opt))))
+                .toList(),
         items: options.map((opt) => DropdownMenuItem(value: opt, child: Text(opt))).toList(),
       ),
     );
+  }
+}
+
+/// Compact label for a coordinate format, e.g. "UTM" or "DMS".
+String _shortCoordFormatLabel(String format) {
+  switch (format) {
+    case SettingsService.coordFormatDD: return 'DD';
+    case SettingsService.coordFormatDMS: return 'DMS';
+    case SettingsService.coordFormatUTM: return 'UTM';
+    case SettingsService.coordFormatMGRS: return 'MGRS';
+    default: return format;
   }
 }
 
