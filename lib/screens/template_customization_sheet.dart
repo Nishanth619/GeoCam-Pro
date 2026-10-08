@@ -4,6 +4,7 @@ import '../theme/app_theme.dart';
 import '../services/settings_service.dart';
 import '../services/ad_service.dart';
 import 'package:geocam_flutter/l10n/app_localizations.dart';
+import 'premium_screen.dart';
 
 class TemplateCustomizationSheet extends StatefulWidget {
   const TemplateCustomizationSheet({super.key});
@@ -23,6 +24,7 @@ class _TemplateCustomizationSheetState extends State<TemplateCustomizationSheet>
   late bool _showDateTime;
   late String _dateFormat;
   late String _coordFormat;
+  late bool _showQrCode;
 
   List<String> _getMapTypes(AppLocalizations l10n) => [
         l10n.templateNormal,
@@ -44,6 +46,16 @@ class _TemplateCustomizationSheetState extends State<TemplateCustomizationSheet>
     _showDateTime = _settings.templateShowDateTime;
     _dateFormat = _settings.templateDateFormat;
     _coordFormat = _settings.templateCoordFormat;
+    _showQrCode = _settings.showQrCode;
+  }
+
+  void _openPremium() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const PremiumScreen()),
+    ).then((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   void _saveAndClose() {
@@ -54,6 +66,7 @@ class _TemplateCustomizationSheetState extends State<TemplateCustomizationSheet>
     _settings.templateShowDateTime = _showDateTime;
     _settings.templateDateFormat = _dateFormat;
     _settings.templateCoordFormat = _coordFormat;
+    _settings.showQrCode = _showQrCode;
 
     // Capture messenger BEFORE popping — the widget will be unmounted after pop.
     final messenger = ScaffoldMessenger.of(context);
@@ -180,6 +193,15 @@ class _TemplateCustomizationSheetState extends State<TemplateCustomizationSheet>
                           label: AppLocalizations.of(context)!.templateDateTimeStamp,
                           value: _showDateTime,
                           onChanged: (v) => setState(() => _showDateTime = v),
+                        ),
+                        _DataFieldToggle(
+                          icon: Icons.qr_code_2,
+                          label: 'QR Code (Google Maps Link)',
+                          subtitle: "Adds a scannable QR code linking to this photo's location",
+                          value: _showQrCode && _settings.hasFeatureAccess,
+                          locked: !_settings.hasFeatureAccess,
+                          onLockedTap: _openPremium,
+                          onChanged: (v) => setState(() => _showQrCode = v),
                         ),
                         const SizedBox(height: 32),
                         
@@ -420,12 +442,19 @@ class _DataFieldToggle extends StatelessWidget {
   final String label;
   final bool value;
   final ValueChanged<bool> onChanged;
+  final String? subtitle;
+  /// Pro-gated: shows a PRO badge instead of the switch and calls [onLockedTap].
+  final bool locked;
+  final VoidCallback? onLockedTap;
 
   const _DataFieldToggle({
     required this.icon,
     required this.label,
     required this.value,
     required this.onChanged,
+    this.subtitle,
+    this.locked = false,
+    this.onLockedTap,
   });
 
   @override
@@ -443,15 +472,56 @@ class _DataFieldToggle extends StatelessWidget {
           Icon(icon, color: AppColors.primary, size: 20),
           const SizedBox(width: 14),
           Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: Colors.white,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white,
+                  ),
+                ),
+                if (subtitle != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      subtitle!,
+                      style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
+                    ),
+                  ),
+              ],
             ),
           ),
+          if (locked)
+            GestureDetector(
+              onTap: onLockedTap,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.primary.withValues(alpha: 0.5)),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.lock, size: 12, color: AppColors.primary),
+                    SizedBox(width: 4),
+                    Text(
+                      'PRO',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
           GestureDetector(
             onTap: () => onChanged(!value),
             child: AnimatedContainer(

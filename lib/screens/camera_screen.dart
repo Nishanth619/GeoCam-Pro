@@ -620,6 +620,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           rotationTurns: rotationTurns,
           pitch: tilt?.pitch,
           roll: tilt?.roll,
+          showQrCode: _settings.showQrCode && _settings.hasFeatureAccess,
         );
         debugPrint('🎨 Watermark done. rotationTurns=$rotationTurns → path=${watermarkedPath ?? "FAILED"}');
 

@@ -13,6 +13,7 @@ import '../models/photo_model.dart';
 import 'location_service.dart';
 import 'settings_service.dart';
 import 'package:image/image.dart' as img;
+import 'package:qr_flutter/qr_flutter.dart';
 
 Uint8List? _encodeJpgTask(Map<String, dynamic> data) {
   try {
@@ -54,6 +55,7 @@ class WatermarkService {
     double rotationTurns = 0.0, // Used to rotate the image physically into landscape
     double? pitch, // Inclinometer: stamped when non-null
     double? roll,
+    bool showQrCode = false, // QR code linking to the location on Google Maps
   }) async {
     try {
       final File originalFile = File(photo.imagePath);
@@ -137,6 +139,7 @@ class WatermarkService {
         isLandscape: isLandscape,
         pitch: pitch,
         roll: roll,
+        showQrCode: showQrCode,
       );
 
       final ui.Image watermarkedImage = await recorder.endRecording().toImage(
@@ -295,6 +298,7 @@ class WatermarkService {
     bool isLandscape = false,
     double? pitch,
     double? roll,
+    bool showQrCode = false,
   }) async {
     // In portrait, scale off the width (the short edge of a tall image).
     // In landscape, scale off the height (the short edge of a wide image).
@@ -453,6 +457,77 @@ class WatermarkService {
 
     // E. Footer Branding
     _drawText(canvas, "📍 GEOCAM PRO", textX, cardY + cardHeight - 30 * scale, maxTextWidth, brandSize, const Color(0xFF38BDF8).withValues(alpha: 0.8), fontWeight: FontWeight.bold);
+
+    // F. QR code — portrait: right-aligned above the card;
+    // landscape: bottom-right corner, in the free space beside the card.
+    if (showQrCode) {
+      _drawLocationQr(
+        canvas,
+        photo,
+        qrSize: math.max(width, height) * 0.08,
+        scale: scale,
+        right: width - padding,
+        bottom: isLandscape ? height - padding : cardY - 16 * scale,
+      );
+    }
+  }
+
+  /// Draws a QR code for https://maps.google.com/?q=LAT,LNG on a white
+  /// backing with a small "Scan for location" caption underneath.
+  /// [right]/[bottom] anchor the outer edge of the whole block.
+  void _drawLocationQr(
+    Canvas canvas,
+    Photo photo, {
+    required double qrSize,
+    required double scale,
+    required double right,
+    required double bottom,
+  }) {
+    final url = 'https://maps.google.com/?q='
+        '${photo.latitude.toStringAsFixed(6)},${photo.longitude.toStringAsFixed(6)}';
+    final double border = 4 * scale;
+    final double boxSize = qrSize + border * 2;
+    final double labelSize = 14 * scale;
+    final double labelGap = 4 * scale;
+    final double labelHeight = labelSize * 1.6;
+
+    final double boxX = right - boxSize;
+    final double boxY = bottom - labelHeight - labelGap - boxSize;
+
+    // White quiet-zone backing
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+          Rect.fromLTWH(boxX, boxY, boxSize, boxSize), Radius.circular(4 * scale)),
+      Paint()..color = Colors.white,
+    );
+
+    canvas.save();
+    canvas.translate(boxX + border, boxY + border);
+    QrPainter(
+      data: url,
+      version: QrVersions.auto,
+      errorCorrectionLevel: QrErrorCorrectLevel.M,
+      gapless: true,
+    ).paint(canvas, Size(qrSize, qrSize));
+    canvas.restore();
+
+    // Caption on a dark pill so it stays legible over any photo
+    final ui.ParagraphBuilder builder = ui.ParagraphBuilder(
+        ui.ParagraphStyle(textAlign: TextAlign.center, fontSize: labelSize, maxLines: 1, ellipsis: '...'))
+      ..pushStyle(ui.TextStyle(color: Colors.white, fontSize: labelSize, fontWeight: FontWeight.w600))
+      ..addText('Scan for location');
+    final ui.Paragraph label = builder.build()
+      ..layout(ui.ParagraphConstraints(width: boxSize));
+    final double labelY = boxY + boxSize + labelGap;
+    final double pillWidth = math.min(boxSize, label.maxIntrinsicWidth + 12 * scale);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(boxX + (boxSize - pillWidth) / 2, labelY, pillWidth, labelHeight),
+        Radius.circular(labelHeight / 2),
+      ),
+      Paint()..color = Colors.black.withValues(alpha: 0.6),
+    );
+    canvas.drawParagraph(label, Offset(boxX, labelY + (labelHeight - label.height) / 2));
   }
 
   List<String> _splitTextIntoLines(String text, double maxTextWidth, double fontSize) {
