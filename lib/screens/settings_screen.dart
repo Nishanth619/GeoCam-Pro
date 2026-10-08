@@ -1,5 +1,6 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:geolocator/geolocator.dart';
 import '../theme/app_theme.dart';
@@ -27,7 +28,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   
   // Storage info
   int _photoCount = 0;
-  double _usedGB = 0;
+  int _usedBytes = 0;
   double _totalGB = 128;
   int _percentage = 0;
   bool _isExporting = false;
@@ -42,13 +43,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // Get photo count
     _photoCount = await _databaseService.getPhotoCount();
     
-    // Get storage info
+    // Sum actual file sizes off the UI thread
     try {
-      final appDir = await getApplicationDocumentsDirectory();
-      final stat = await appDir.stat();
-      // Estimate used space (rough calculation)
-      _usedGB = _photoCount * 3.5 / 1024; // Assume ~3.5MB per photo
-      _percentage = ((_usedGB / _totalGB) * 100).clamp(0, 100).toInt();
+      final paths = await _databaseService.getAllPhotoPaths();
+      _usedBytes = await compute(_sumFileSizes, paths);
+      final usedGB = _usedBytes / (1024 * 1024 * 1024);
+      _percentage = ((usedGB / _totalGB) * 100).clamp(0, 100).toInt();
     } catch (e) {
       debugPrint('Error getting storage: $e');
     }
@@ -382,7 +382,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _buildSectionHeader(l10n.settingsStorageSection, Icons.storage_outlined),
               _StorageTile(
                 photoCount: _photoCount,
-                usedGB: _usedGB,
+                usedBytes: _usedBytes,
                 totalGB: _totalGB,
                 percentage: _percentage,
               ),
@@ -836,15 +836,36 @@ class _SettingsDropdownTile extends StatelessWidget {
   }
 }
 
+/// Sums the on-disk size of [paths]. Runs in a background isolate via compute().
+/// Missing or unreadable files are skipped.
+int _sumFileSizes(List<String> paths) {
+  var total = 0;
+  for (final path in paths) {
+    try {
+      total += File(path).lengthSync();
+    } catch (_) {
+      // File was deleted outside the app — ignore
+    }
+  }
+  return total;
+}
+
+String _formatBytes(int bytes) {
+  const mb = 1024 * 1024;
+  const gb = mb * 1024;
+  if (bytes >= gb) return '${(bytes / gb).toStringAsFixed(2)} GB';
+  return '${(bytes / mb).toStringAsFixed(2)} MB';
+}
+
 class _StorageTile extends StatelessWidget {
   final int photoCount;
-  final double usedGB;
+  final int usedBytes;
   final double totalGB;
   final int percentage;
 
   const _StorageTile({
     required this.photoCount,
-    required this.usedGB,
+    required this.usedBytes,
     required this.totalGB,
     required this.percentage,
   });
@@ -898,7 +919,7 @@ class _StorageTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '~${usedGB.toStringAsFixed(1)} GB used',
+                  '${_formatBytes(usedBytes)} used',
                   style: const TextStyle(
                     fontSize: 12,
                     color: AppColors.textMuted,

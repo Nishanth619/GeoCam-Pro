@@ -149,6 +149,13 @@ class DatabaseService {
     return Sqflite.firstIntValue(result) ?? 0;
   }
 
+  /// Get the file paths of all stored photos
+  Future<List<String>> getAllPhotoPaths() async {
+    final db = await database;
+    final result = await db.query('photos', columns: ['imagePath']);
+    return result.map((row) => row['imagePath'] as String).toList();
+  }
+
   /// Get photos grouped by date for gallery display
   Future<Map<DateTime, List<Photo>>> getPhotosGroupedByDate() async {
     final photos = await getAllPhotos();
