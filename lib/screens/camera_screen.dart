@@ -62,6 +62,13 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Position? _currentPosition;
   String? _currentAddress;
   StreamSubscription<Position>? _positionSubscription;
+  // True once a fresh fix arrives (stream or poll). The cached last-known
+  // position can be hours old, so its accuracy must not count as a lock.
+  bool _hasLiveFix = false;
+  // Polls for a fresh fix while waiting for GPS lock — the position stream's
+  // 2 m distance filter delivers nothing to a user standing still.
+  Timer? _gpsLockPollTimer;
+  bool _isPollingGps = false;
 
   // Weather data
   double? _temperature;
@@ -90,8 +97,15 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     WidgetsBinding.instance.addObserver(this);
     // Lock this screen to portrait; HUD rotates via sensor instead
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    _settings.cameraSettingsRevision.addListener(_onCameraSettingsChanged);
     _initializeAll();
     _startSensorOrientation();
+  }
+
+  void _onCameraSettingsChanged() {
+    if (!mounted) return;
+    setState(() {});
+    _updateGpsLockPolling();
   }
 
   /// Listens to the accelerometer and updates [_hudRotationTurns].
@@ -124,6 +138,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     WidgetsBinding.instance.removeObserver(this);
     _positionSubscription?.cancel();
     _sensorSubscription?.cancel();
+    _gpsLockPollTimer?.cancel();
+    _settings.cameraSettingsRevision.removeListener(_onCameraSettingsChanged);
     _cameraService.dispose();
     // Restore all orientations when leaving the camera screen
     SystemChrome.setPreferredOrientations([
@@ -142,7 +158,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       // Only dispose when truly backgrounded/killed — NOT on inactive
       // (inactive fires for notification shade, phone calls, etc.)
       _cameraService.dispose();
+      _gpsLockPollTimer?.cancel();
+      _gpsLockPollTimer = null;
     } else if (state == AppLifecycleState.resumed) {
+      _updateGpsLockPolling();
       // Do a full (non-silent) re-init so errors surface properly
       _initializeCamera();
       if (_positionSubscription == null) {
@@ -278,7 +297,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
           setState(() {
             _currentPosition = position;
+            _hasLiveFix = true;
           });
+          _updateGpsLockPolling();
 
           if (isSignificantMove || _currentAddress == null) {
             final address = await _locationService.getAddressFromCoordinates(
@@ -301,6 +322,43 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     
     // 3. Trigger a fresh single-shot accurate fix in background (optional, stream handles it)
     unawaited(_locationService.getCurrentPosition());
+    _updateGpsLockPolling();
+  }
+
+  /// Accuracy of the latest live fix, or null while still acquiring.
+  double? get _liveAccuracy => _hasLiveFix ? _currentPosition?.accuracy : null;
+
+  /// True when "wait for GPS lock" is on and accuracy isn't good enough yet.
+  /// A manual location pin bypasses the gate — GPS isn't used for that photo.
+  bool get _isWaitingForGpsLock =>
+      _settings.waitForGpsLock &&
+      !_locationService.isManualOverrideActive &&
+      !LocationService.isLockedAccuracy(_liveAccuracy);
+
+  void _updateGpsLockPolling() {
+    if (_isWaitingForGpsLock) {
+      _gpsLockPollTimer ??=
+          Timer.periodic(const Duration(seconds: 3), (_) => _pollGpsFix());
+    } else {
+      _gpsLockPollTimer?.cancel();
+      _gpsLockPollTimer = null;
+    }
+  }
+
+  Future<void> _pollGpsFix() async {
+    if (_isPollingGps) return;
+    _isPollingGps = true;
+    final position = await _locationService.getCurrentPosition(
+        timeout: const Duration(seconds: 8));
+    _isPollingGps = false;
+    if (!mounted || position == null) return;
+    // getCurrentPosition falls back to the cached fix on failure — ignore stale ones
+    if (DateTime.now().difference(position.timestamp).inSeconds > 15) return;
+    setState(() {
+      _currentPosition = position;
+      _hasLiveFix = true;
+    });
+    _updateGpsLockPolling();
   }
 
   Future<void> _fetchWeather() async {
@@ -376,8 +434,13 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
-  Future<void> _capturePhoto() async {
+  /// [force] bypasses the "wait for GPS lock" gate (long-press on the shutter).
+  Future<void> _capturePhoto({bool force = false}) async {
     if (_isCapturing || !_cameraService.isInitialized) return;
+    if (!force && _isWaitingForGpsLock) {
+      _showGpsLockHint();
+      return;
+    }
 
     // ⚡ SNAPSHOT both orientation AND datetime NOW at shutter press.
     // capturedAt must be read here — before any async gaps — so the
@@ -422,6 +485,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           debugPrint('🕐 One-shot datetime override consumed — returning to system time.');
         }
         if (mounted) setState(() {}); // Refresh HUD to remove amber tint
+        _updateGpsLockPolling(); // Override consumed — the GPS gate may apply again
 
         // Monetization: Trigger Interstitial ad logic
         _adService.onPhotoCaptured();
@@ -432,6 +496,26 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         _isCapturing = false;
       });
     }
+  }
+
+  void _showGpsLockHint() {
+    final accuracy = _liveAccuracy;
+    final status = accuracy != null ? ' (±${accuracy.round()}m)' : '';
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            'Waiting for GPS lock$status. Long-press the shutter to capture anyway.',
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+          ),
+          backgroundColor: const Color(0xFF1A2332),
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          duration: const Duration(seconds: 3),
+        ),
+      );
   }
 
   /// Background pipeline for heavy image processing.
@@ -1067,6 +1151,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         .then((_) {
       if (!mounted) return;
       setState(() {});
+      _updateGpsLockPolling();
       // Show confirmation SnackBar so the user can verify what was saved.
       if (_locationService.isManualDateTimeActive) {
         final dt = _locationService.effectiveDateTime;
@@ -1137,6 +1222,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           ? _settings.formatTemperature(_temperature)
           : '--',
       gpsSignal: _locationService.getGpsSignalStrength(_currentPosition?.accuracy),
+      accuracy: _liveAccuracy,
       dateTime: null,        // null → GpsHudCard owns its own 1-Hz clock timer
       isManualDateTime: false,  // Never show "CUSTOM" badge in live preview
       latitude: livePosition?.latitude,
@@ -1153,36 +1239,73 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
   Widget _buildShutterButton() {
-    return GestureDetector(
+    final waiting = _isWaitingForGpsLock;
+    final button = GestureDetector(
       onTap: _capturePhoto,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 100),
-        width: 80,
-        height: 80,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white, width: 4),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.5),
-              blurRadius: 20,
-            ),
-          ],
-        ),
-        child: Center(
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 100),
-            width: _isCapturing ? 56 : 64,
-            height: _isCapturing ? 56 : 64,
-            decoration: BoxDecoration(
-              color: _isCapturing
-                  ? const Color(0xFFB91C1C)
-                  : const Color(0xFFDC2626),
-              shape: BoxShape.circle,
+      onLongPress: waiting ? () => _capturePhoto(force: true) : null,
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 200),
+        opacity: waiting ? 0.4 : 1.0,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 100),
+          width: 80,
+          height: 80,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 4),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.5),
+                blurRadius: 20,
+              ),
+            ],
+          ),
+          child: Center(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 100),
+              width: _isCapturing ? 56 : 64,
+              height: _isCapturing ? 56 : 64,
+              decoration: BoxDecoration(
+                color: _isCapturing
+                    ? const Color(0xFFB91C1C)
+                    : const Color(0xFFDC2626),
+                shape: BoxShape.circle,
+              ),
             ),
           ),
         ),
       ),
+    );
+    if (!waiting) return button;
+
+    return Stack(
+      clipBehavior: Clip.none,
+      alignment: Alignment.center,
+      children: [
+        button,
+        const Positioned(
+          top: -28,
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Color(0x99000000),
+                borderRadius: BorderRadius.all(Radius.circular(8)),
+              ),
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                child: Text(
+                  'Waiting for GPS...',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.warning,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 

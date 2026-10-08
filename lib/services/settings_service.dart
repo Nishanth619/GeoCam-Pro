@@ -9,6 +9,11 @@ class SettingsService {
 
   SharedPreferences? _prefs;
 
+  /// Bumped whenever a setting the live camera screen reacts to changes.
+  /// The camera stays mounted in an IndexedStack, so it can't rely on
+  /// being rebuilt when the user returns from the Settings tab.
+  final ValueNotifier<int> cameraSettingsRevision = ValueNotifier(0);
+
   // Setting keys
   static const String _keyGridLines = 'grid_lines_enabled';
   static const String _keyMetricUnits = 'metric_units';
@@ -19,6 +24,7 @@ class SettingsService {
   static const String _keyHasSeenOnboarding = 'has_seen_onboarding';
   static const String _keyHasAcceptedTerms = 'has_accepted_terms';
   static const String _keyAppLanguage = 'app_language';
+  static const String _keyWaitForGpsLock = 'wait_for_gps_lock';
   
   // Watermark settings
   static const String _keyWatermarkLogo = 'watermark_logo';
@@ -54,6 +60,13 @@ class SettingsService {
   
   bool get gridLinesEnabled => _prefs?.getBool(_keyGridLines) ?? false;
   set gridLinesEnabled(bool value) => _prefs?.setBool(_keyGridLines, value);
+
+  /// When true the shutter is disabled until GPS accuracy is better than 10 m.
+  bool get waitForGpsLock => _prefs?.getBool(_keyWaitForGpsLock) ?? false;
+  set waitForGpsLock(bool value) {
+    _prefs?.setBool(_keyWaitForGpsLock, value);
+    cameraSettingsRevision.value++;
+  }
 
   String get imageResolution => _prefs?.getString(_keyImageResolution) ?? 'high';
   set imageResolution(String value) => _prefs?.setString(_keyImageResolution, value);

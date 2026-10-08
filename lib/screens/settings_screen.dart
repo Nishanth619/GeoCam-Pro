@@ -311,6 +311,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   setState(() => _settings.showWatermark = value);
                 },
               ),
+              _SettingsToggleTile(
+                icon: Icons.gps_fixed,
+                title: 'Wait for GPS lock before capture',
+                subtitle: 'Shutter stays disabled until accuracy is better than ±10 m',
+                value: _settings.waitForGpsLock,
+                onChanged: (value) {
+                  setState(() => _settings.waitForGpsLock = value);
+                },
+              ),
 
 
               // Data Fields Section

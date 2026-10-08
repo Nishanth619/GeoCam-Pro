@@ -43,6 +43,10 @@ class GpsHudCard extends StatefulWidget {
   /// When true an amber "CUSTOM TIME" badge is shown next to the date/time row.
   final bool isManualDateTime;
 
+  /// Live GPS accuracy in metres. When set, replaces the signal label with a
+  /// lock gauge (red > 30 m, yellow 10–30 m, green < 10 m).
+  final double? accuracy;
+
   const GpsHudCard({
     super.key,
     required this.address,
@@ -64,6 +68,7 @@ class GpsHudCard extends StatefulWidget {
     this.isLandscape = false,
     this.isManualLocation = false,
     this.isManualDateTime = false,
+    this.accuracy,
   });
 
   @override
@@ -366,6 +371,17 @@ class _GpsHudCardState extends State<GpsHudCard> {
   }
 
   Widget _buildGpsSignalIndicator() {
+    final accuracy = widget.accuracy;
+    if (accuracy != null) {
+      final meters = accuracy.round();
+      if (accuracy < 10) {
+        return _buildStatusDot(AppColors.gpsLocked, 'Locked: ±${meters}m');
+      } else if (accuracy <= 30) {
+        return _buildStatusDot(AppColors.warning, 'Okay: ±${meters}m');
+      }
+      return _buildStatusDot(AppColors.error, 'Acquiring: ±${meters}m');
+    }
+
     Color signalColor;
     switch (widget.gpsSignal) {
       case 'HIGH':      signalColor = const Color(0xFF10B981); break;
@@ -375,6 +391,10 @@ class _GpsHudCardState extends State<GpsHudCard> {
       case 'MANUAL':    signalColor = const Color(0xFFF59E0B); break;
       default:          signalColor = const Color(0xFFEF4444);
     }
+    return _buildStatusDot(signalColor, widget.gpsSignal);
+  }
+
+  Widget _buildStatusDot(Color signalColor, String label) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -388,13 +408,16 @@ class _GpsHudCardState extends State<GpsHudCard> {
           ),
         ),
         const SizedBox(width: 6),
-        Text(
-          widget.gpsSignal,
-          style: TextStyle(
-            fontSize: 9,
-            fontWeight: FontWeight.bold,
-            color: signalColor,
-            letterSpacing: 0.5,
+        Flexible(
+          child: Text(
+            label,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.bold,
+              color: signalColor,
+              letterSpacing: 0.5,
+            ),
           ),
         ),
       ],

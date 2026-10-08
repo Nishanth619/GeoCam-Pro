@@ -114,6 +114,15 @@ class LocationService {
 
   Position? get lastPosition => _lastPosition;
 
+  /// Accuracy (metres) below which a fix counts as "locked".
+  static const double gpsLockAccuracy = 10;
+
+  /// Horizontal accuracy (metres) of the latest GPS fix, or null if none yet.
+  double? get currentAccuracy => _lastPosition?.accuracy;
+
+  static bool isLockedAccuracy(double? accuracy) =>
+      accuracy != null && accuracy < gpsLockAccuracy;
+
   /// Check if location services are enabled
   Future<bool> isLocationServiceEnabled() async {
     try {
@@ -237,9 +246,14 @@ class LocationService {
         );
       }
       
+      // Keep _lastPosition in sync so currentAccuracy and effectivePosition
+      // (used at capture) reflect the live stream, not just one-shot fixes.
       return Geolocator.getPositionStream(
         locationSettings: locationSettings,
-      );
+      ).map((position) {
+        _lastPosition = position;
+        return position;
+      });
     } catch (e) {
       debugPrint('Error creating position stream: $e');
       return null;

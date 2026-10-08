@@ -23,6 +23,7 @@ class AppColors {
   static const Color success = Color(0xFF38BDF8); // Using sky blue for success alignment
   static const Color error = Color(0xFFEF4444);
   static const Color warning = Color(0xFFF59E0B);
+  static const Color gpsLocked = Color(0xFF22C55E);
 }
 
 class AppTheme {
