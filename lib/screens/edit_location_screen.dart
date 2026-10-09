@@ -504,8 +504,9 @@ class _EditLocationScreenState extends State<EditLocationScreen>
   String get _satelliteUrl =>
       'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
   // Labels overlay — rendered on top so street names are readable on satellite
+  // (Esri reference layer: free, same host as the imagery)
   String get _labelsUrl =>
-      'https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png';
+      'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}';
 
   // ─── MY LOCATION ───────────────────────────────────────────────────────────────
   void _flyToMyLocation() {
@@ -578,7 +579,6 @@ class _EditLocationScreenState extends State<EditLocationScreen>
               // Labels overlay (street names, POI labels readable on satellite)
               TileLayer(
                 urlTemplate: _labelsUrl,
-                subdomains: const ['a', 'b', 'c', 'd'],
                 userAgentPackageName: 'com.geocam.app',
                 maxZoom: 20,
               ),

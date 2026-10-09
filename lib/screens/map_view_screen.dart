@@ -218,13 +218,13 @@ class _MapViewScreenState extends State<MapViewScreen> {
               children: [
                 // Map tiles
                 TileLayer(
-                  urlTemplate: _mapType == 0 
-                    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+                  // OpenStreetMap (CARTO's free dark tiles now require an API key)
+                  urlTemplate: _mapType == 0
+                    ? 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
                     : 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                  subdomains: const ['a', 'b', 'c', 'd'],
                   userAgentPackageName: 'com.geocam.app',
+                  maxNativeZoom: _mapType == 0 ? 19 : 18,
                   maxZoom: 20,
-                  retinaMode: true,
                 ),
                 // Photo markers with clustering
                 if (_showClusters && _photos.isNotEmpty)
